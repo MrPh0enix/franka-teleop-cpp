@@ -3,3 +3,7 @@
 
 CMakeFiles/follower.dir/follower.cpp.o
  /home/johnkiran/franka-teleop-cpp/follower.cpp
+ messages/robot-state.capnp.h
+CMakeFiles/follower.dir/messages/robot-state.capnp.c++.o
+ /home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.c++
+ /home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.h

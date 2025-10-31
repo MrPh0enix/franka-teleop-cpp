@@ -13,6 +13,11 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+//capnp message
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "messages/robot-state.capnp.h"
+
 
 #define PORT 49185
 #define BUFFER_SIZE 2048
@@ -36,14 +41,22 @@ void pubThread (const YAML::Node& config) {
     send_addr.sin_port = htons(PORT);
     inet_pton(AF_INET, ip.c_str(), &send_addr.sin_addr);
 
-    const int pub_freq = config["global"]["freq"].as<int>(); //Hz
+    const int pub_freq = config["global"]["freq"].as<int>(); //Hz 
 
-    // test message
-    std::string msg = "Hello from server!";
 
     while (running.load()) {
 
-        sendto(sockPub, msg.c_str(), msg.size(), 0, (struct sockaddr *)&send_addr, sizeof(send_addr));
+        //build message
+        capnp::MallocMessageBuilder message;
+        RobotState::Builder leader_state = message.initRoot<RobotState>();
+
+        leader_state.setTime(123456);
+
+        kj::VectorOutputStream state_message;
+        capnp::writeMessage(state_message, message);
+        kj::ArrayPtr<const kj::byte> sz_state_message = state_message.getArray();
+
+        sendto(sockPub, sz_state_message.begin(), sz_state_message.size(), 0, (struct sockaddr *)&send_addr, sizeof(send_addr));
 
         std::cout << "Publishing..." << std::endl;
 

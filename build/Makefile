@@ -190,6 +190,36 @@ leader.cpp.s:
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/leader.cpp.s
 .PHONY : leader.cpp.s
 
+messages/robot-state.capnp.o: messages/robot-state.capnp.c++.o
+
+.PHONY : messages/robot-state.capnp.o
+
+# target to build an object file
+messages/robot-state.capnp.c++.o:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.o
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.o
+.PHONY : messages/robot-state.capnp.c++.o
+
+messages/robot-state.capnp.i: messages/robot-state.capnp.c++.i
+
+.PHONY : messages/robot-state.capnp.i
+
+# target to preprocess a source file
+messages/robot-state.capnp.c++.i:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.i
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.i
+.PHONY : messages/robot-state.capnp.c++.i
+
+messages/robot-state.capnp.s: messages/robot-state.capnp.c++.s
+
+.PHONY : messages/robot-state.capnp.s
+
+# target to generate assembly for a file
+messages/robot-state.capnp.c++.s:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.s
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.s
+.PHONY : messages/robot-state.capnp.c++.s
+
 # Help Target
 help:
 	@echo "The following are some of the valid targets for this Makefile:"
@@ -206,6 +236,9 @@ help:
 	@echo "... leader.o"
 	@echo "... leader.i"
 	@echo "... leader.s"
+	@echo "... messages/robot-state.capnp.o"
+	@echo "... messages/robot-state.capnp.i"
+	@echo "... messages/robot-state.capnp.s"
 .PHONY : help
 
 

@@ -3,3 +3,7 @@
 
 CMakeFiles/leader.dir/leader.cpp.o
  /home/johnkiran/franka-teleop-cpp/leader.cpp
+ messages/robot-state.capnp.h
+CMakeFiles/leader.dir/messages/robot-state.capnp.c++.o
+ /home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.c++
+ /home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.h

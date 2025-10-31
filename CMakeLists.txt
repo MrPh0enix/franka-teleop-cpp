@@ -16,10 +16,10 @@ find_package(Franka REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 
-# # generate capnp files
-# capnp_generate_cpp(CAPNP_SRCS CAPNP_HDRS messages/robot-state.capnp)
-# # Add the directory containing .capnp.h to the include path
-# include_directories(${CMAKE_CURRENT_BINARY_DIR})
+# generate capnp files
+capnp_generate_cpp(CAPNP_SRCS CAPNP_HDRS messages/robot-state.capnp)
+# Add the directory containing .capnp.h to the include path
+include_directories(${CMAKE_CURRENT_BINARY_DIR})
 
 # copy config file to build
 configure_file(
@@ -38,6 +38,7 @@ add_executable(follower
 target_link_libraries(follower
     Franka::Franka
     CapnProto::capnp
+    CapnProto::kj
     yaml-cpp
 )
 
@@ -51,5 +52,6 @@ add_executable(leader
 target_link_libraries(leader
     Franka::Franka
     CapnProto::capnp
+    CapnProto::kj
     yaml-cpp
 )

@@ -27,4 +27,16 @@ arpa/inet.h
 -
 unistd.h
 -
+capnp/message.h
+-
+capnp/serialize.h
+-
+messages/robot-state.capnp.h
+/home/johnkiran/franka-teleop-cpp/messages/robot-state.capnp.h
+
+messages/robot-state.capnp.h
+capnp/generated-header-support.h
+-
+kj/windows-sanity.h
+-
 

@@ -1,0 +1,2 @@
+# Hashes of file build rules.
+2bcc3d454481678ca8be5e5e88c6e9ff messages/robot-state.capnp.c++

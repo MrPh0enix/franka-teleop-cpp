@@ -12,6 +12,11 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+//capnp message
+#include <capnp/message.h>
+#include <capnp/serialize.h>
+#include "messages/robot-state.capnp.h"
+
 #define PORT 49186
 #define BUFFER_SIZE 2048
 
@@ -45,15 +50,26 @@ void subThread (const YAML::Node& config) {
         close(sockSub);
     }
 
-    std::cout << "Subscriber lsitening on port: 49185" << std::endl;
+    std::cout << "Subscriber lsitening on port: " << port << std::endl;
 
     while(running.load()) {
 
         ssize_t n = recvfrom(sockSub, buffer, sizeof(buffer), 0, nullptr, nullptr);
 
-        buffer[n] = '\0';
+        if (n < 0) {
+            perror("Socket failed to recv info!");
+            break;
+        }
 
-        std::cout << "Received : " << buffer << std::endl;
+        // unpack message
+        std::vector<capnp::word> alignedBuffer((n + sizeof(capnp::word) - 1) / sizeof(capnp::word));
+        memcpy(alignedBuffer.data(), buffer, n);
+        kj::ArrayPtr<const capnp::word> receivedData(alignedBuffer.data(), alignedBuffer.size());
+        capnp::FlatArrayMessageReader reader(receivedData);
+        RobotState::Reader leader_state = reader.getRoot<RobotState>();
+
+
+        std::cout << "Received : " << leader_state.getTime() << std::endl;
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000/sub_freq));
 

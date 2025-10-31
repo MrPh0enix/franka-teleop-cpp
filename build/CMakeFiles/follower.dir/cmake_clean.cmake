@@ -1,7 +1,10 @@
 file(REMOVE_RECURSE
   "CMakeFiles/follower.dir/follower.cpp.o"
+  "CMakeFiles/follower.dir/messages/robot-state.capnp.c++.o"
   "follower"
   "follower.pdb"
+  "messages/robot-state.capnp.c++"
+  "messages/robot-state.capnp.h"
 )
 
 # Per-language clean rules from dependency scanning.

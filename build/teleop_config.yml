@@ -1,12 +1,13 @@
 
 
 global:
-  freq:100
+  freq: 100
+  buffer_size: 2048
 
 leader:
-  ip:""
-  port:1234
+  ip: "127.0.0.1"
+  port: 49185
 
 follower:
-  ip:""
-  port:1235
+  ip: "127.0.0.1"
+  port: 49186

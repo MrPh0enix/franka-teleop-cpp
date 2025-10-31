@@ -37,9 +37,7 @@ add_executable(follower
 # Link libraries
 target_link_libraries(follower
     Franka::Franka
-    CapnProto::capnp 
-    CapnProto::capnpc
-    ${CAPNP_LIBRARIES}
+    CapnProto::capnp
     yaml-cpp
 )
 
@@ -52,8 +50,6 @@ add_executable(leader
 # Link libraries
 target_link_libraries(leader
     Franka::Franka
-    CapnProto::capnp 
-    CapnProto::capnpc
-    ${CAPNP_LIBRARIES}
+    CapnProto::capnp
     yaml-cpp
 )

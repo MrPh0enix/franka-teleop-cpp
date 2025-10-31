@@ -23,6 +23,10 @@ std::atomic<bool> running{true};
 
 
 void pubThread (const YAML::Node& config) {
+
+    //config
+    std::string ip = config["leader"]["ip"].as<std::string>();
+    int port = config["leader"]["port"].as<int>();
      
     // socket params
     int sockPub = socket(AF_INET, SOCK_DGRAM, 0);
@@ -30,9 +34,9 @@ void pubThread (const YAML::Node& config) {
     struct sockaddr_in send_addr{};
     send_addr.sin_family = AF_INET;
     send_addr.sin_port = htons(PORT);
-    inet_pton(AF_INET, "127.0.0.1", &send_addr.sin_addr);
+    inet_pton(AF_INET, ip.c_str(), &send_addr.sin_addr);
 
-    const int pub_freq = 100; //Hz
+    const int pub_freq = config["global"]["freq"].as<int>(); //Hz
 
     // test message
     std::string msg = "Hello from server!";

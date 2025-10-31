@@ -27,15 +27,18 @@ void pubThread () {
 
 
 void subThread (const YAML::Node& config) {
+
+    int port = config["leader"]["port"].as<int>();
+
     //socket params
     int sockSub = socket(AF_INET, SOCK_DGRAM, 0);
     char buffer[BUFFER_SIZE];
     struct sockaddr_in recv_addr{};
     recv_addr.sin_family = AF_INET;
-    recv_addr.sin_port = htons(49185); // port for leader publisher
+    recv_addr.sin_port = htons(port); // port for leader publisher
     recv_addr.sin_addr.s_addr = INADDR_ANY; // listen on all addresses
 
-    const int sub_freq = 100; //Hz
+    const int sub_freq = config["global"]["freq"].as<int>(); //Hz
 
     if (bind(sockSub, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
         perror("Subscriber socket bind failed");

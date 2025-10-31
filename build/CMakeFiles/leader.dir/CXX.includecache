@@ -35,6 +35,12 @@ capnp/serialize.h
 -
 messages/robot-state.capnp.h
 /home/johnkiran/franka-teleop-cpp/messages/robot-state.capnp.h
+franka/model.h
+-
+franka/robot.h
+-
+franka/exception.h
+-
 
 messages/robot-state.capnp.h
 capnp/generated-header-support.h

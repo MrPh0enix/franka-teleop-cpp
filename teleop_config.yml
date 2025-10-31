@@ -6,8 +6,10 @@ global:
 
 leader:
   ip: "127.0.0.1"
+  robot: "172.22.2.3" #vincent
   port: 49185
 
 follower:
   ip: "127.0.0.1"
+  robot: "172.22.2.4" #bob
   port: 49186

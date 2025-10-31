@@ -1,0 +1,12 @@
+[
+{
+  "directory": "/home/john/Projets/franka-teleop-cpp/build",
+  "command": "/usr/bin/c++    -g   -pthread -std=gnu++2a -o CMakeFiles/leader.dir/leader.cpp.o -c /home/john/Projets/franka-teleop-cpp/leader.cpp",
+  "file": "/home/john/Projets/franka-teleop-cpp/leader.cpp"
+},
+{
+  "directory": "/home/john/Projets/franka-teleop-cpp/build",
+  "command": "/usr/bin/c++    -g   -pthread -std=gnu++2a -o CMakeFiles/follower.dir/follower.cpp.o -c /home/john/Projets/franka-teleop-cpp/follower.cpp",
+  "file": "/home/john/Projets/franka-teleop-cpp/follower.cpp"
+}
+]

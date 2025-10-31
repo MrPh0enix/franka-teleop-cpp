@@ -1,0 +1,32 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/john/Projets/franka-teleop-cpp/leader.cpp
+iostream
+-
+cstring
+-
+string
+-
+mutex
+-
+thread
+-
+atomic
+-
+termios.h
+-
+yaml-cpp/yaml.h
+-
+sys/socket.h
+-
+arpa/inet.h
+-
+unistd.h
+-
+

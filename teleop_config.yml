@@ -1,0 +1,12 @@
+
+
+global:
+  freq:100
+
+leader:
+  ip:""
+  port:1234
+
+follower:
+  ip:""
+  port:1235

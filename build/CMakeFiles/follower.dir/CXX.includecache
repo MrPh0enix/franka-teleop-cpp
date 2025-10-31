@@ -1,0 +1,30 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/john/Projets/franka-teleop-cpp/follower.cpp
+iostream
+-
+cstring
+-
+string
+-
+mutex
+-
+thread
+-
+atomic
+-
+yaml-cpp/yaml.h
+-
+sys/socket.h
+-
+arpa/inet.h
+-
+unistd.h
+-
+

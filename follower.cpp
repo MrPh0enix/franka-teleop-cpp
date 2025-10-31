@@ -106,7 +106,7 @@ int main () {
         scale * 800.0,
         scale * 600.0,
         scale * 800.0,
-        scale * 150.0,
+        scale * 80.0,
         scale * 150.0,
         scale * 50.0
     };
@@ -122,7 +122,7 @@ int main () {
     };
 
     // velocity limits
-    const std::array<double, 7> velo_limits = {8.0, 7.0, 7.0, 7.0, 6.0, 6.0, 4.0};
+    const std::array<double, 7> velo_limits = {20.0, 15.0, 15.0, 15.0, 15.0, 15.0, 10.0};
 
 
 

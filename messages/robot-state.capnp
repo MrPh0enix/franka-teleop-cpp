@@ -1,0 +1,34 @@
+@0xb688f6e9883fe200;
+const version :UInt32 = 2;
+struct RobotState {
+  const messageSize :UInt32 = 248;
+  time @0 :UInt64 = 0;
+  joint1Pos @1 :Float64 = 0;
+  joint2Pos @2 :Float64 = 0;
+  joint3Pos @3 :Float64 = 0;
+  joint4Pos @4 :Float64 = 0;
+  joint5Pos @5 :Float64 = 0;
+  joint6Pos @6 :Float64 = 0;
+  joint7Pos @7 :Float64 = 0;
+  joint1Vel @8 :Float64 = 0;
+  joint2Vel @9 :Float64 = 0;
+  joint3Vel @10 :Float64 = 0;
+  joint4Vel @11 :Float64 = 0;
+  joint5Vel @12 :Float64 = 0;
+  joint6Vel @13 :Float64 = 0;
+  joint7Vel @14 :Float64 = 0;
+  joint1Torque @15 :Float64 = 0;
+  joint2Torque @16 :Float64 = 0;
+  joint3Torque @17 :Float64 = 0;
+  joint4Torque @18 :Float64 = 0;
+  joint5Torque @19 :Float64 = 0;
+  joint6Torque @20 :Float64 = 0;
+  joint7Torque @21 :Float64 = 0;
+  joint1ExtTorque @22 :Float64 = 0;
+  joint2ExtTorque @23 :Float64 = 0;
+  joint3ExtTorque @24 :Float64 = 0;
+  joint4ExtTorque @25 :Float64 = 0;
+  joint5ExtTorque @26 :Float64 = 0;
+  joint6ExtTorque @27 :Float64 = 0;
+  joint7ExtTorque @28 :Float64 = 0;
+}

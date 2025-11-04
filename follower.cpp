@@ -100,36 +100,18 @@ int main () {
     // contact switch sensitivity
     const double contact_threshold = 2.5;
 
-    // Define PGain and DGain
-    std::array<double, 7> P_gain = {
-        scale * 800.0,
-        scale * 800.0,
-        scale * 600.0,
-        scale * 800.0,
-        scale * 80.0,
-        scale * 150.0,
-        scale * 50.0
-    };
-
-    std::array<double, 7> D_gain = {
-        scale * 50.0,
-        scale * 50.0,
-        scale * 50.0,
-        scale * 50.0,
-        scale * 30.0,
-        scale * 25.0,
-        scale * 10.0
-    };
-
-    // velocity limits
-    const std::array<double, 7> velo_limits = {20.0, 15.0, 15.0, 15.0, 15.0, 15.0, 10.0};
-
-
 
     try {
 
         // config
         YAML::Node config = YAML::LoadFile("teleop_config.yml");
+
+        // Define PGain and DGain and velo_limits
+        std::vector<double> P_gain = config["follower"]["p_vals"].as<std::vector<double>>();
+        std::vector<double> D_gain = config["follower"]["d_vals"].as<std::vector<double>>();
+        std::vector<double> velo_limits_vec = config["global"]["velo_limits"].as<std::vector<double>>();
+        std::array<double, 7> velo_limits;
+        std::copy(velo_limits_vec.begin(), velo_limits_vec.end(), velo_limits.begin()); // convert to array.
 
         //connect to robot
         franka::Robot robot(config["follower"]["robot"].as<std::string>());
@@ -169,14 +151,15 @@ int main () {
                 leader_state.getJoint7Pos()
             };
 
-            // limit velocity of joints
+            // // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
+            // std::array<double, 7> target_pos = leader_pos;
 
             // Compute torques
             for (int i = 0; i < 7; ++i) {
                 double pos_error = target_pos[i] - joint_pos[i];
                 double vel = joint_vel[i];
-                torques[i] = P_gain[i] * pos_error - D_gain[i] * vel;
+                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
             };
 
             return torques;

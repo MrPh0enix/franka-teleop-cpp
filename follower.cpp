@@ -211,7 +211,7 @@ int main () {
 
 
         // lambda function to compute torques
-        auto computeTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
+        auto computeUnilateralTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
 
 
             // initialize trqs

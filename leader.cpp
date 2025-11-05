@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <termios.h>
 #include <yaml-cpp/yaml.h>
 
 // for UDP socket
@@ -170,6 +171,28 @@ void subThread(const YAML::Node& config) {
 
 
 
+void keyListener() {
+
+    termios newT, oldT;
+    tcgetattr(STDIN_FILENO, &oldT); //current terminal settings for backup
+
+    newT = oldT;
+    newT.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newT);
+
+    char key;
+    while(running.load()) {
+        key = getchar();
+        if (key == 'q' || key =='Q') {
+            std::cout << "Q pressed" << std::endl;
+        }
+    }
+
+
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldT);
+
+}
+
 
 int main () {
 
@@ -201,6 +224,8 @@ int main () {
         std::thread pub_thread(pubThread, std::cref(config));
         // start sub thread
         std::thread sub_thread(subThread, std::cref(config));
+        //key listener thread
+        std::thread key_thread(keyListener);
 
         // set collision behavior
         robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
@@ -326,7 +351,7 @@ int main () {
             bool anyOf = std::any_of(ext_trq.begin(), ext_trq.end(), [&contact_threshold](double x){ return std::abs(x) > contact_threshold;});
             if (anyOf) {
                 control_rob.store('L');
-            };
+            }
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
@@ -360,6 +385,7 @@ int main () {
         running.store(false);
         pub_thread.join();
         sub_thread.join();
+        key_thread.join();
 
     } catch (const std::exception& ex) {
 

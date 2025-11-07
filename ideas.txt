@@ -1,0 +1,9 @@
+
+
+oscillations on follower side induce vibrations and impart energy on the leader side
+
+torque controller with - PD and force components run on one executable
+
+https://ieeexplore.ieee.org/abstract/document/1290760?casa_token=ThvwzR28vvsAAAAA:d3XuBqTPvDVfDu0V7Mj4Samxns29v9XzxaKxqpxQO19tIbI60qzE012OyHZ0cFn7agYKDty_zw
+
+https://www.tandfonline.com/doi/abs/10.1080/09398368.2006.11463616

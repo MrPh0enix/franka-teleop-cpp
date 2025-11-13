@@ -26,6 +26,7 @@
 #include <franka/robot.h>
 #include <franka/exception.h>
 #include <franka/rate_limiting.h>
+#include "examples_common.h"
 
 
 
@@ -246,9 +247,13 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
+
+
+        // move robot to start
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        MotionGenerator motion_generator(0.5, home_pos);
+        robot.control(motion_generator);
         
-
-
 
         // lambda function to compute torques
         auto computeUnilateralTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {

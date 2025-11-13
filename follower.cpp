@@ -7,6 +7,10 @@
 #include <atomic>
 #include <yaml-cpp/yaml.h>
 
+// Key listener
+#include <termios.h>
+#include <fcntl.h>
+
 // for UDP socket
 #include <sys/socket.h>
 #include <arpa/inet.h>
@@ -169,6 +173,40 @@ void subThread (const YAML::Node& config) {
 
 
 
+void keyListener() {
+
+    termios newT, oldT;
+    tcgetattr(STDIN_FILENO, &oldT); //current terminal settings for backup
+
+    newT = oldT;
+    newT.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &newT);
+
+    // Make thread non blocking
+    int oldFlags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, oldFlags | O_NONBLOCK);
+
+    std::cout << "Running ... Press Q to exit .." << std::endl;
+
+
+    char key;
+    while(running.load()) {
+        key = getchar();
+        if (key == 'q' || key =='Q') {
+            running.store(false);
+            std::cout << "Q Pressed ...." << std::endl;
+        }
+        usleep(10000); //delay
+    }
+
+    // restore terminal on exit
+    tcsetattr(STDIN_FILENO, TCSANOW, &oldT);
+    fcntl(STDIN_FILENO, F_SETFL, oldFlags);
+
+}
+
+
+
 
 int main () {
 
@@ -200,6 +238,8 @@ int main () {
         std::thread sub_thread(subThread, std::cref(config));
         // start pub thread
         std::thread pub_thread(pubThread, std::cref(config));
+        //key listener thread
+        std::thread key_thread(keyListener);
 
         // set collision behavior
         robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
@@ -355,6 +395,14 @@ int main () {
         // control callback function
         auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
             
+            if (!running.load()) {
+
+                std::cout << "Exiting .... " << std::endl;
+                
+                return franka::MotionFinished(franka::Torques({0, 0, 0, 0, 0, 0, 0}));
+                
+            }
+
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
                 shared_robot_state = robot_state;
@@ -399,6 +447,7 @@ int main () {
         running.store(false);
         sub_thread.join();
         pub_thread.join();
+        key_thread.join();
 
 
     } catch (const std::exception& ex) {

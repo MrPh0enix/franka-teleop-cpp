@@ -6,6 +6,7 @@
 #include <thread>
 #include <atomic>
 #include <yaml-cpp/yaml.h>
+#include <fstream>
 
 // Key listener
 #include <termios.h>
@@ -27,6 +28,8 @@
 #include <franka/exception.h>
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
+
+using namespace std;
 
 
 #define BUFFER_SIZE 2048
@@ -353,6 +356,51 @@ int main () {
 
 
 
+        auto computeBilateralTrqs3 = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
+
+            // initialize trqs
+            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+            if (!sub_connected.load()) {
+
+                return torques;
+        
+            };
+
+            RobotState::Reader follower_state;
+
+            {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                follower_state = shared_follower_state;
+            }
+
+            std::array<double, 7> follower_pos = {
+                follower_state.getJoint1Pos(),
+                follower_state.getJoint2Pos(),
+                follower_state.getJoint3Pos(),
+                follower_state.getJoint4Pos(),
+                follower_state.getJoint5Pos(),
+                follower_state.getJoint6Pos(),
+                follower_state.getJoint7Pos()
+            };
+
+            // // limit velocity of joints
+            std::array<double, 7> target_pos = franka::limitRate(velo_limits, follower_pos, joint_pos);
+            // std::array<double, 7> target_pos = follower_pos;
+
+            // Compute torques
+            for (int i = 0; i < 7; ++i) {
+                double pos_error = target_pos[i] - joint_pos[i];
+                double vel = joint_vel[i];
+                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
+            };
+
+            return torques;
+
+        };
+
+
+
 
         // control callback function
         auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
@@ -374,10 +422,14 @@ int main () {
 
             // detect contact
             std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+            std::array<std::array<double, 7>, 7> M_nom = robot_state.M;
+
             bool anyOf = std::any_of(ext_trq.begin(), ext_trq.end(), [&contact_threshold](double x){ return std::abs(x) > contact_threshold;});
             if (anyOf) {
                 control_rob.store('L');
             }
+            
+
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;

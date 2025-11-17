@@ -218,6 +218,7 @@ int main () {
     
     try {
 
+
         // config
         YAML::Node config = YAML::LoadFile("teleop_config.yml");
 
@@ -228,6 +229,12 @@ int main () {
         std::array<double, 7> velo_limits;
         std::copy(velo_limits_vec.begin(), velo_limits_vec.end(), velo_limits.begin()); // convert to array.
 
+        //constants for force feedback
+        std::vector<double> C_q = config["global"]["C_q"].as<std::vector<double>>();
+        std::vector<double> C_v = config["global"]["C_v"].as<std::vector<double>>();
+        std::vector<double> C_y = config["global"]["C_y"].as<std::vector<double>>();
+        std::vector<double> C_f = config["global"]["C_f"].as<std::vector<double>>();
+        
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
 
@@ -235,6 +242,11 @@ int main () {
         franka::Robot robot(config["leader"]["robot"].as<std::string>());
         shared_robot_state = robot.readOnce();
         franka::Model model = robot.loadModel();
+
+        // move robot to start
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        MotionGenerator motion_generator(0.5, home_pos);
+        robot.control(motion_generator);
 
         // start publisher thread
         std::thread pub_thread(pubThread, std::cref(config));
@@ -250,10 +262,6 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
         
-        // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
 
 
         // lambda functions to compute torques
@@ -355,11 +363,12 @@ int main () {
         };
 
 
-
-        auto computeBilateralTrqs3 = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
+        auto computeBilateralWithForceFeedback = [&](const franka::RobotState& robot_state) {
 
             // initialize trqs
             std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            // initialize acclerations
+            std::array<double, 7> acc = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
             if (!sub_connected.load()) {
 
@@ -384,16 +393,58 @@ int main () {
                 follower_state.getJoint7Pos()
             };
 
-            // // limit velocity of joints
-            std::array<double, 7> target_pos = franka::limitRate(velo_limits, follower_pos, joint_pos);
-            // std::array<double, 7> target_pos = follower_pos;
+            std::array<double, 7> follower_vel = {
+                follower_state.getJoint1Vel(),
+                follower_state.getJoint2Vel(),
+                follower_state.getJoint3Vel(),
+                follower_state.getJoint4Vel(),
+                follower_state.getJoint5Vel(),
+                follower_state.getJoint6Vel(),
+                follower_state.getJoint7Vel()
+            };
+
+            std::array<double, 7> follower_ext_trq = {
+                follower_state.getJoint1ExtTorque(),
+                follower_state.getJoint2ExtTorque(),
+                follower_state.getJoint3ExtTorque(),
+                follower_state.getJoint4ExtTorque(),
+                follower_state.getJoint5ExtTorque(),
+                follower_state.getJoint6ExtTorque(),
+                follower_state.getJoint7ExtTorque()
+            };
+
+            
+            std::array<double, 7> joint_pos = robot_state.q;
+            std::array<double, 7> joint_vel = robot_state.dq;
+            std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+
+            // moment of inertia matrix
+            std::array<double, 49> MOI = model.mass(robot_state);
+
+
+            // Compute accelerations
+            for (int i = 0; i < 7; ++i) {
+                double pos_error = joint_pos[i] - follower_pos[i];
+                double vel_error = joint_vel[i] - follower_vel[i];
+                double vel_tot = joint_vel[i] + follower_vel[i];
+                double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
+                if (i == 5) {
+                    acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 10)) * (ext_trq_tot));
+                }
+                
+            }
+
 
             // Compute torques
-            for (int i = 0; i < 7; ++i) {
-                double pos_error = target_pos[i] - joint_pos[i];
-                double vel = joint_vel[i];
-                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-            };
+            for (int i = 0; i < 7; i++) {
+                if (i == 5) {
+                    for (int j = 0; j < 7; j++) {
+                        torques[i] += MOI[i*7 + j] * acc[j];
+                    }
+                }
+            }
+
 
             return torques;
 
@@ -422,7 +473,6 @@ int main () {
 
             // detect contact
             std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
-            std::array<std::array<double, 7>, 7> M_nom = robot_state.M;
 
             bool anyOf = std::any_of(ext_trq.begin(), ext_trq.end(), [&contact_threshold](double x){ return std::abs(x) > contact_threshold;});
             if (anyOf) {
@@ -433,11 +483,13 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> command_torques = computeBilateralTrqs(joint_pos, joint_vel);
+            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
 
             return command_torques;
 
         };
+
+
 
 
         while (running.load()) {

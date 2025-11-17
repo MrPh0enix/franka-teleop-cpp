@@ -10,6 +10,6 @@ https://www.tandfonline.com/doi/abs/10.1080/09398368.2006.11463616
 
 
 1. Shannon Sampling theorem
-2. Cannot increase Cp and Cv practically. Cp - 1000 to 4000, Cv - 50 to 100 , Cf - 30 to 70, Cy is very small - 5 to 15. 
+2. Cannot increase Cq and Cv practically. Cq - 1000 to 4000, Cv - 50 to 100 , Cf - 30 to 70, Cy is very small - 5 to 15. 
 3. Laplace transform - solving differential equation
 4. Positions and velocities should follow one another, Forces should be opposing - how to check algorythm works.

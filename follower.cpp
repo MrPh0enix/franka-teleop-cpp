@@ -227,6 +227,12 @@ int main () {
         std::array<double, 7> velo_limits;
         std::copy(velo_limits_vec.begin(), velo_limits_vec.end(), velo_limits.begin()); // convert to array.
 
+        //constants for force feedback
+        std::vector<double> C_q = config["global"]["C_q"].as<std::vector<double>>();
+        std::vector<double> C_v = config["global"]["C_v"].as<std::vector<double>>();
+        std::vector<double> C_y = config["global"]["C_y"].as<std::vector<double>>();
+        std::vector<double> C_f = config["global"]["C_f"].as<std::vector<double>>();
+
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
 
@@ -234,6 +240,11 @@ int main () {
         franka::Robot robot(config["follower"]["robot"].as<std::string>());
         shared_robot_state = robot.readOnce();
         franka::Model model = robot.loadModel();
+
+        // move robot to start
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        MotionGenerator motion_generator(0.5, home_pos);
+        robot.control(motion_generator);
 
         // start sub thread
         std::thread sub_thread(subThread, std::cref(config));
@@ -249,10 +260,6 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
 
-        // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
         
 
         // lambda function to compute torques
@@ -395,6 +402,95 @@ int main () {
 
 
 
+        auto computeBilateralWithForceFeedback = [&](const franka::RobotState& robot_state) {
+
+            // initialize trqs
+            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            // initialize acclerations
+            std::array<double, 7> acc = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+            if (!sub_connected.load()) {
+
+                return torques;
+        
+            };
+
+            RobotState::Reader leader_state;
+
+            {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                leader_state = shared_leader_state;
+            }
+
+            std::array<double, 7> leader_pos = {
+                leader_state.getJoint1Pos(),
+                leader_state.getJoint2Pos(),
+                leader_state.getJoint3Pos(),
+                leader_state.getJoint4Pos(),
+                leader_state.getJoint5Pos(),
+                leader_state.getJoint6Pos(),
+                leader_state.getJoint7Pos()
+            };
+
+            std::array<double, 7> leader_vel = {
+                leader_state.getJoint1Vel(),
+                leader_state.getJoint2Vel(),
+                leader_state.getJoint3Vel(),
+                leader_state.getJoint4Vel(),
+                leader_state.getJoint5Vel(),
+                leader_state.getJoint6Vel(),
+                leader_state.getJoint7Vel()
+            };
+
+            std::array<double, 7> leader_ext_trq = {
+                leader_state.getJoint1ExtTorque(),
+                leader_state.getJoint2ExtTorque(),
+                leader_state.getJoint3ExtTorque(),
+                leader_state.getJoint4ExtTorque(),
+                leader_state.getJoint5ExtTorque(),
+                leader_state.getJoint6ExtTorque(),
+                leader_state.getJoint7ExtTorque()
+            };
+
+            
+            std::array<double, 7> joint_pos = robot_state.q;
+            std::array<double, 7> joint_vel = robot_state.dq;
+            std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+
+            // moment of inertia matrix
+            std::array<double, 49> MOI = model.mass(robot_state);
+
+
+            // Compute accelerations
+            for (int i = 0; i < 7; ++i) {
+                double pos_error = joint_pos[i] - leader_pos[i];
+                double vel_error = joint_vel[i] - leader_vel[i];
+                double vel_tot = joint_vel[i] + leader_vel[i];
+                double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
+                if (i == 5) {
+                    acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 10)) * (ext_trq_tot));
+                }
+                
+            }
+
+
+            // Compute torques
+            for (int i = 0; i < 7; i++) {
+                if (i == 5) {
+                    for (int j = 0; j < 7; j++) {
+                        torques[i] += MOI[i*7 + j] * acc[j];
+                    }
+                } 
+            }
+
+
+            return torques;
+
+        };
+
+
+
 
 
         // control callback function
@@ -422,11 +518,13 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> command_torques = computeBilateralTrqs(joint_pos, joint_vel);
+            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
 
             return command_torques;
 
         };
+
+
 
 
         while (running.load()) {

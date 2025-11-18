@@ -428,7 +428,7 @@ int main () {
                 double vel_error = joint_vel[i] - follower_vel[i];
                 double vel_tot = joint_vel[i] + follower_vel[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                if (i == 5) {
+                if (i == 0) {
                     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 10)) * (ext_trq_tot));
                 }
@@ -438,7 +438,7 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if (i == 5) {
+                if (i == 0) {
                     for (int j = 0; j < 7; j++) {
                         torques[i] += MOI[i*7 + j] * acc[j];
                     }

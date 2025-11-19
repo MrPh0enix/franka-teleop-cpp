@@ -6,5 +6,5 @@ CXX_FLAGS = -O3 -DNDEBUG   -pthread -std=gnu++2a
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/johnkiran/franka-teleop-cpp/build 
+CXX_INCLUDES = -I/home/johnkiran/franka-teleop-cpp/build -I/home/johnkiran/franka-teleop-cpp/franka_examples -I/usr/include/eigen3 
 

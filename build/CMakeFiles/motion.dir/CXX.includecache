@@ -1,0 +1,16 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/home/johnkiran/franka-teleop-cpp/motion.cpp
+franka/model.h
+-
+franka/robot.h
+-
+franka/exception.h
+-
+

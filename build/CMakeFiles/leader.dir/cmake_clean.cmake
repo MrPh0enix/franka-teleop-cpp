@@ -1,4 +1,5 @@
 file(REMOVE_RECURSE
+  "CMakeFiles/leader.dir/franka_examples/examples_common.cpp.o"
   "CMakeFiles/leader.dir/leader.cpp.o"
   "CMakeFiles/leader.dir/messages/robot-state.capnp.c++.o"
   "leader"

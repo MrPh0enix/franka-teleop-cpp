@@ -7,6 +7,7 @@
 #include <atomic>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include <cmath>
 
 // Key listener
 #include <termios.h>
@@ -28,6 +29,9 @@
 #include <franka/exception.h>
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
+
+
+#include <franka/lowpass_filter.h>
 
 using namespace std;
 
@@ -245,7 +249,9 @@ int main () {
 
         // move robot to start
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
+        std::array<double, 7> TOP = {0.0197862, 0.475927, -0.0844572, -2.35928, 0.0855179, 2.85254, 0.781102};
+        std::array<double, 7> BOTTOM = {0.0207323, 0.527758, -0.0849659, 2.34778, 0.084263, 2.85764, 0.774969};
+        MotionGenerator motion_generator(0.5, TOP);
         robot.control(motion_generator);
 
         // start publisher thread
@@ -261,7 +267,22 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
+
+        std::array<double, 7> LPF_in_last = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
         
+
+        
+
+        auto lowPassFilter = [&] (int g_val, double sample_time, double y, double y_last) {
+            double output = 0.0;
+
+            
+            output = (1 / (1 + (g_val * sample_time))) * (( g_val * sample_time * y) + y_last);
+              
+            
+            return output;
+        };
 
 
         // lambda functions to compute torques
@@ -370,6 +391,7 @@ int main () {
             // initialize acclerations
             std::array<double, 7> acc = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
+
             if (!sub_connected.load()) {
 
                 return torques;
@@ -428,26 +450,70 @@ int main () {
                 double vel_error = joint_vel[i] - follower_vel[i];
                 double vel_tot = joint_vel[i] + follower_vel[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                if (i == 0) {
+                if (i == 6) {
                     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 10)) * (ext_trq_tot));
+                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 }
                 
             }
-
+            
+            std::array<double, 7> RHS = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            std::array<double, 7> LPF_in = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            std::array<double, 7> lowPass_out = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+            std::array<double, 7> Tau_dist = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if (i == 0) {
+                if (i == 6) {
                     for (int j = 0; j < 7; j++) {
                         torques[i] += MOI[i*7 + j] * acc[j];
+
+                        RHS[i] += MOI[i*7 + j] * joint_vel[j] * 500;
+                        LPF_in[i] = RHS[i] + torques[i];
+                        lowPass_out[i] = lowPassFilter(500, 1000/900000, LPF_in[i], LPF_in_last[i]);
+
+                        Tau_dist[i] = lowPass_out[i] - RHS[i];
+
+                        torques[i] = torques[i] + Tau_dist[i];
+
+                        LPF_in_last[i] = LPF_in[i];
+
                     }
                 }
             }
 
 
+
+
+
             return torques;
 
+        };
+
+
+
+        double timeElapsed = 0.0;
+
+        auto joint_pos_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::CartesianVelocities {
+
+            timeElapsed += period.toSec();
+
+            std::array<double, 7> pos = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+            
+
+            for (int i = 0; i < 7; ++i) {
+                
+                double amp = TOP[i] - BOTTOM[i];
+                double mid = (TOP[i] + BOTTOM[i])/2;
+                
+                pos[i] = mid + (amp * (std::sin(0.1 * timeElapsed)));
+
+            };
+
+            franka::JointPositions pos_f = franka::JointPositions::JointPositions(pos);
+
+            return pos_f;
         };
 
 
@@ -483,7 +549,10 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+
+
+
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
 
@@ -494,11 +563,10 @@ int main () {
 
         while (running.load()) {
 
-
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback);
+                robot.control(joint_pos_callback);
 
             } catch (const franka::Exception& ex) {
 
@@ -507,9 +575,9 @@ int main () {
 
                 // auto recover
                 robot.automaticErrorRecovery();
-
             }
-        }
+
+        }   
 
         // stop thread
         running.store(false);

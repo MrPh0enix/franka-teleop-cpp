@@ -76,12 +76,12 @@ clean: CMakeFiles/follower.dir/clean
 CMakeFiles/leader.dir/all:
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/depend
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/johnkiran/franka-teleop-cpp/build/CMakeFiles --progress-num=5,6,7,8 "Built target leader"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/johnkiran/franka-teleop-cpp/build/CMakeFiles --progress-num=6,7,8,9,10 "Built target leader"
 .PHONY : CMakeFiles/leader.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/leader.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 5
 	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/leader.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 0
 .PHONY : CMakeFiles/leader.dir/rule
@@ -103,12 +103,12 @@ CMakeFiles/leader.dir/clean:
 CMakeFiles/follower.dir/all:
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/depend
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/build
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/johnkiran/franka-teleop-cpp/build/CMakeFiles --progress-num=1,2,3,4 "Built target follower"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --progress-dir=/home/johnkiran/franka-teleop-cpp/build/CMakeFiles --progress-num=1,2,3,4,5 "Built target follower"
 .PHONY : CMakeFiles/follower.dir/all
 
 # Build rule for subdir invocation for target.
 CMakeFiles/follower.dir/rule: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 4
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 5
 	$(MAKE) -f CMakeFiles/Makefile2 CMakeFiles/follower.dir/all
 	$(CMAKE_COMMAND) -E cmake_progress_start /home/johnkiran/franka-teleop-cpp/build/CMakeFiles 0
 .PHONY : CMakeFiles/follower.dir/rule

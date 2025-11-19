@@ -163,6 +163,36 @@ follower.cpp.s:
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/follower.cpp.s
 .PHONY : follower.cpp.s
 
+franka_examples/examples_common.o: franka_examples/examples_common.cpp.o
+
+.PHONY : franka_examples/examples_common.o
+
+# target to build an object file
+franka_examples/examples_common.cpp.o:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.o
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.o
+.PHONY : franka_examples/examples_common.cpp.o
+
+franka_examples/examples_common.i: franka_examples/examples_common.cpp.i
+
+.PHONY : franka_examples/examples_common.i
+
+# target to preprocess a source file
+franka_examples/examples_common.cpp.i:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.i
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.i
+.PHONY : franka_examples/examples_common.cpp.i
+
+franka_examples/examples_common.s: franka_examples/examples_common.cpp.s
+
+.PHONY : franka_examples/examples_common.s
+
+# target to generate assembly for a file
+franka_examples/examples_common.cpp.s:
+	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.s
+	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.s
+.PHONY : franka_examples/examples_common.cpp.s
+
 leader.o: leader.cpp.o
 
 .PHONY : leader.o
@@ -233,6 +263,9 @@ help:
 	@echo "... follower.o"
 	@echo "... follower.i"
 	@echo "... follower.s"
+	@echo "... franka_examples/examples_common.o"
+	@echo "... franka_examples/examples_common.i"
+	@echo "... franka_examples/examples_common.s"
 	@echo "... leader.o"
 	@echo "... leader.i"
 	@echo "... leader.s"

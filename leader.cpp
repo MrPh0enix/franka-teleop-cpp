@@ -26,6 +26,7 @@
 //franka libs
 #include <franka/model.h>
 #include <franka/robot.h>
+#include <franka/gripper.h>
 #include <franka/exception.h>
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
@@ -40,10 +41,12 @@ using namespace std;
 
 RobotState::Reader shared_follower_state;
 franka::RobotState shared_robot_state;
+double shared_gripper_width = 0.08;
 std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
+
 
 
 
@@ -52,6 +55,8 @@ void pubThread (const YAML::Node& config) {
     //config
     std::string ip = config["leader"]["ip"].as<std::string>();
     int port = config["leader"]["port"].as<int>();
+
+    
      
     // socket params
     int sockPub = socket(AF_INET, SOCK_DGRAM, 0);
@@ -70,10 +75,13 @@ void pubThread (const YAML::Node& config) {
         capnp::MallocMessageBuilder message;
         RobotState::Builder leader_state = message.initRoot<RobotState>();
         franka::RobotState state_to_publish;
+        double gripperWidth;
+
 
         {
             std::lock_guard<std::mutex> lock(state_mutex);
             state_to_publish = shared_robot_state;
+            gripperWidth = shared_gripper_width;
         }
 
         leader_state.setTime(123456);
@@ -105,6 +113,7 @@ void pubThread (const YAML::Node& config) {
         leader_state.setJoint5ExtTorque(state_to_publish.tau_ext_hat_filtered[4]);
         leader_state.setJoint6ExtTorque(state_to_publish.tau_ext_hat_filtered[5]);
         leader_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
+        leader_state.setGripperWidth(gripperWidth);
         leader_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
 
         kj::VectorOutputStream state_message;
@@ -120,7 +129,6 @@ void pubThread (const YAML::Node& config) {
     close(sockPub);
 
 }
-
 
 
 
@@ -215,6 +223,28 @@ void keyListener() {
 
 
 
+void setGripperWidth(const YAML::Node& config) {
+
+    //connect to the gripper
+    franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
+
+    while (running.load()) {
+
+        //read gripper state
+        franka::GripperState gripperState = gripper.readOnce();
+        double gripperWidth =  gripperState.width;
+
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            shared_gripper_width = gripperWidth;
+        }
+
+    }
+
+}
+
+
+
 
 int main () {
 
@@ -258,6 +288,8 @@ int main () {
         std::thread pub_thread(pubThread, std::cref(config));
         // start sub thread
         std::thread sub_thread(subThread, std::cref(config));
+        // start gripper thread
+        std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
 

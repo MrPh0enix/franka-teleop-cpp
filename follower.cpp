@@ -299,9 +299,16 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; ++i) {
-                double pos_error = target_pos[i] - joint_pos[i];
                 double vel = joint_vel[i];
-                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
+
+                if (i == 6) {
+                    double pos_error = target_pos[i] - joint_pos[i] - 1.57;
+                    torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
+                } else {
+                    double pos_error = target_pos[i] - joint_pos[i];
+                    torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
+                }
+                
             };
 
             return torques;
@@ -518,7 +525,7 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
 

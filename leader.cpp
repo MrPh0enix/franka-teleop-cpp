@@ -214,6 +214,8 @@ void keyListener() {
 }
 
 
+
+
 int main () {
 
     // scale for P and D values
@@ -249,9 +251,7 @@ int main () {
 
         // move robot to start
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        std::array<double, 7> TOP = {0.0197862, 0.475927, -0.0844572, -2.35928, 0.0855179, 2.85254, 0.781102};
-        std::array<double, 7> BOTTOM = {0.0207323, 0.527758, -0.0849659, 2.34778, 0.084263, 2.85764, 0.774969};
-        MotionGenerator motion_generator(0.5, TOP);
+        MotionGenerator motion_generator(0.5, home_pos);
         robot.control(motion_generator);
 
         // start publisher thread
@@ -492,32 +492,6 @@ int main () {
 
 
 
-        double timeElapsed = 0.0;
-
-        auto joint_pos_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::CartesianVelocities {
-
-            timeElapsed += period.toSec();
-
-            std::array<double, 7> pos = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-            
-
-            for (int i = 0; i < 7; ++i) {
-                
-                double amp = TOP[i] - BOTTOM[i];
-                double mid = (TOP[i] + BOTTOM[i])/2;
-                
-                pos[i] = mid + (amp * (std::sin(0.1 * timeElapsed)));
-
-            };
-
-            franka::JointPositions pos_f = franka::JointPositions::JointPositions(pos);
-
-            return pos_f;
-        };
-
-
-
 
         // control callback function
         auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
@@ -551,7 +525,6 @@ int main () {
             std::array<double, 7> joint_vel = robot_state.dq;
 
 
-
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
@@ -566,7 +539,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(joint_pos_callback);
+                robot.control(trq_control_callback);
 
             } catch (const franka::Exception& ex) {
 

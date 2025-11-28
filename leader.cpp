@@ -298,7 +298,20 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
+        
+        
 
+        //set cartesian impedence
+        std::array<double, 6> impedance = {
+            {200.0, 200.0, 50.0,   // Z is soft
+            200.0, 200.0, 30.0}   // Yaw is soft
+        };
+
+        // std::cout << "REached" << std::endl;
+
+        robot.setCartesianImpedance(impedance);
+
+        
 
         std::array<double, 7> LPF_in_last = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 

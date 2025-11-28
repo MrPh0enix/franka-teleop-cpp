@@ -238,10 +238,11 @@ void setGripperWidth(const YAML::Node& config) {
 
 
         double leader_gripper_width = leader_state.getGripperWidth();
-        if (leader_gripper_width < 0.04 && !gripperState.is_grasped) {
-            gripper.grasp(0.0254, 0.1, 1);
+
+        if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
+            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
         } else if (leader_gripper_width >= 0.04) {
-            gripper.move(0.04, 0.1);
+            gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
         }
         
     }

@@ -5,6 +5,7 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
+#include <fstream>
 #include <yaml-cpp/yaml.h>
 
 // Key listener
@@ -108,7 +109,7 @@ void pubThread (const YAML::Node& config) {
         follower_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
         follower_state.setGripperWidth(gripperWidth);
         follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
-
+    
         kj::VectorOutputStream state_message;
         capnp::writeMessage(state_message, message);
         kj::ArrayPtr<const kj::byte> sz_state_message = state_message.getArray();
@@ -305,6 +306,7 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
 
+        
         
 
         // lambda function to compute torques
@@ -521,7 +523,7 @@ int main () {
                 double vel_error = joint_vel[i] - leader_vel[i];
                 double vel_tot = joint_vel[i] + leader_vel[i];
                 double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-                if (i == 6) {
+                if ((i == 6) || (i == 5)) {
                     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 }
@@ -531,7 +533,7 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if (i == 6) {
+                if ((i == 6) || (i == 5)) {
                     for (int j = 0; j < 7; j++) {
                         torques[i] += MOI[i*7 + j] * acc[j];
                     }

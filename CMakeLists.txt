@@ -63,3 +63,18 @@ target_link_libraries(leader
     CapnProto::kj
     yaml-cpp
 )
+
+
+add_executable(test 
+            test.cpp
+            franka_examples/examples_common.cpp
+            ${CAPNP_SRCS}
+            ${CAPNP_HDRS})
+
+# Link libraries
+target_link_libraries(test
+    Franka::Franka
+    CapnProto::capnp
+    CapnProto::kj
+    yaml-cpp
+)

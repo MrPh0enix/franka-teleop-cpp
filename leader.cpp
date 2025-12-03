@@ -7,7 +7,9 @@
 #include <atomic>
 #include <yaml-cpp/yaml.h>
 #include <fstream>
+#include <filesystem>
 #include <cmath>
+#include <algorithm>
 
 // Key listener
 #include <termios.h>
@@ -46,6 +48,8 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
+std::atomic<bool> record{false};
+std::atomic<int> rec_num{0};
 
 
 
@@ -115,6 +119,7 @@ void pubThread (const YAML::Node& config) {
         leader_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
         leader_state.setGripperWidth(gripperWidth);
         leader_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
+        
 
         kj::VectorOutputStream state_message;
         capnp::writeMessage(state_message, message);
@@ -245,6 +250,38 @@ void setGripperWidth(const YAML::Node& config) {
 
 
 
+void recorder(const YAML::Node& config) {
+
+    int rec_freq = config["global"]["rec_freq"].as<int>();
+
+    while (running.load()) {
+
+        if (record.load()) {
+
+            std::ofstream file("recordings/recording" + std::to_string(rec_num.load()) + ".txt", std::ios::app);
+
+            franka::RobotState leader_state;
+            RobotState::Reader follower_state;
+
+            {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            leader_state = shared_robot_state;
+            follower_state = shared_follower_state;
+            }
+
+            file << "Hello!!!" << "\n";
+
+            file.close();
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000/rec_freq));
+
+    }
+    
+}
+
+
+
 
 int main () {
 
@@ -257,6 +294,25 @@ int main () {
 
         // config
         YAML::Node config = YAML::LoadFile("teleop_config.yml");
+
+        //recordings file initialization
+        std::filesystem::path recordings_dir = "recordings";
+        int count = 0;
+        if (!std::filesystem::exists(recordings_dir)) {
+            std::filesystem::create_directory(recordings_dir);
+            try{
+                std::filesystem::permissions(recordings_dir, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace);
+            } catch (const std::filesystem::filesystem_error& e) {
+                std::cout << "error" << std::endl;
+            }
+            
+            rec_num.store(0);
+        } else {
+            for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
+                count++;
+            }
+            rec_num.store(++count);
+        }
 
         // Define PGain and DGain and velo_limits
         std::vector<double> P_gain = config["leader"]["p_vals"].as<std::vector<double>>();
@@ -292,6 +348,8 @@ int main () {
         std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
+        //recorder thread
+        std::thread rec_thread(recorder, std::cref(config));
 
         // set collision behavior
         robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
@@ -299,35 +357,9 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
         
-        
-
-        //set cartesian impedence
-        std::array<double, 6> impedance = {
-            {200.0, 200.0, 50.0,   // Z is soft
-            200.0, 200.0, 30.0}   // Yaw is soft
-        };
-
-        // std::cout << "REached" << std::endl;
-
-        robot.setCartesianImpedance(impedance);
 
         
-
-        std::array<double, 7> LPF_in_last = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-        
-
-        
-
-        auto lowPassFilter = [&] (int g_val, double sample_time, double y, double y_last) {
-            double output = 0.0;
-
-            
-            output = (1 / (1 + (g_val * sample_time))) * (( g_val * sample_time * y) + y_last);
-              
-            
-            return output;
-        };
+   
 
 
         // lambda functions to compute torques
@@ -436,7 +468,6 @@ int main () {
             // initialize acclerations
             std::array<double, 7> acc = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-
             if (!sub_connected.load()) {
 
                 return torques;
@@ -480,10 +511,13 @@ int main () {
                 follower_state.getJoint7ExtTorque()
             };
 
+
+
             
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
             std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+
 
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
@@ -495,40 +529,22 @@ int main () {
                 double vel_error = joint_vel[i] - follower_vel[i];
                 double vel_tot = joint_vel[i] + follower_vel[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                if (i == 6) {
+                if ((i == 6) || (i == 5)) {
                     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 }
                 
             }
             
-            std::array<double, 7> RHS = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            std::array<double, 7> LPF_in = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            std::array<double, 7> lowPass_out = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            std::array<double, 7> Tau_dist = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
+        
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if (i == 6) {
+                if ((i == 6) || (i == 5)) {
                     for (int j = 0; j < 7; j++) {
-                        torques[i] += MOI[i*7 + j] * acc[j];
-
-                        RHS[i] += MOI[i*7 + j] * joint_vel[j] * 500;
-                        LPF_in[i] = RHS[i] + torques[i];
-                        lowPass_out[i] = lowPassFilter(500, 1000/900000, LPF_in[i], LPF_in_last[i]);
-
-                        Tau_dist[i] = lowPass_out[i] - RHS[i];
-
-                        torques[i] = torques[i] + Tau_dist[i];
-
-                        LPF_in_last[i] = LPF_in[i];
-
+                        torques[i] += MOI[i*7 + j] * acc[j] ;
                     }
                 }
             }
-
-
-
 
 
             return torques;
@@ -563,12 +579,19 @@ int main () {
             if (anyOf) {
                 control_rob.store('L');
             }
-            
-
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
 
+            //start rec
+            double threshold = 0.015;
+            for (size_t i=0; i < home_pos.size(); i++) {
+                if (!record.load()) {
+                    if (std::abs(home_pos[i] - joint_pos[i]) > threshold) {
+                        record.store(true);
+                    }
+                }
+            }
 
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
@@ -602,6 +625,7 @@ int main () {
         pub_thread.join();
         sub_thread.join();
         key_thread.join();
+        rec_thread.join();
 
     } catch (const std::exception& ex) {
 

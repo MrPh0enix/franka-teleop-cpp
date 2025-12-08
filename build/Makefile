@@ -111,6 +111,19 @@ depend:
 .PHONY : depend
 
 #=============================================================================
+# Target rules for targets named test
+
+# Build rule for target.
+test: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 test
+.PHONY : test
+
+# fast build rule for target.
+test/fast:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/build
+.PHONY : test/fast
+
+#=============================================================================
 # Target rules for targets named leader
 
 # Build rule for target.
@@ -169,6 +182,7 @@ franka_examples/examples_common.o: franka_examples/examples_common.cpp.o
 
 # target to build an object file
 franka_examples/examples_common.cpp.o:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/franka_examples/examples_common.cpp.o
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.o
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.o
 .PHONY : franka_examples/examples_common.cpp.o
@@ -179,6 +193,7 @@ franka_examples/examples_common.i: franka_examples/examples_common.cpp.i
 
 # target to preprocess a source file
 franka_examples/examples_common.cpp.i:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/franka_examples/examples_common.cpp.i
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.i
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.i
 .PHONY : franka_examples/examples_common.cpp.i
@@ -189,6 +204,7 @@ franka_examples/examples_common.s: franka_examples/examples_common.cpp.s
 
 # target to generate assembly for a file
 franka_examples/examples_common.cpp.s:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/franka_examples/examples_common.cpp.s
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/franka_examples/examples_common.cpp.s
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/franka_examples/examples_common.cpp.s
 .PHONY : franka_examples/examples_common.cpp.s
@@ -226,6 +242,7 @@ messages/robot-state.capnp.o: messages/robot-state.capnp.c++.o
 
 # target to build an object file
 messages/robot-state.capnp.c++.o:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/messages/robot-state.capnp.c++.o
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.o
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.o
 .PHONY : messages/robot-state.capnp.c++.o
@@ -236,6 +253,7 @@ messages/robot-state.capnp.i: messages/robot-state.capnp.c++.i
 
 # target to preprocess a source file
 messages/robot-state.capnp.c++.i:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/messages/robot-state.capnp.c++.i
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.i
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.i
 .PHONY : messages/robot-state.capnp.c++.i
@@ -246,9 +264,37 @@ messages/robot-state.capnp.s: messages/robot-state.capnp.c++.s
 
 # target to generate assembly for a file
 messages/robot-state.capnp.c++.s:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/messages/robot-state.capnp.c++.s
 	$(MAKE) -f CMakeFiles/leader.dir/build.make CMakeFiles/leader.dir/messages/robot-state.capnp.c++.s
 	$(MAKE) -f CMakeFiles/follower.dir/build.make CMakeFiles/follower.dir/messages/robot-state.capnp.c++.s
 .PHONY : messages/robot-state.capnp.c++.s
+
+test.o: test.cpp.o
+
+.PHONY : test.o
+
+# target to build an object file
+test.cpp.o:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/test.cpp.o
+.PHONY : test.cpp.o
+
+test.i: test.cpp.i
+
+.PHONY : test.i
+
+# target to preprocess a source file
+test.cpp.i:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/test.cpp.i
+.PHONY : test.cpp.i
+
+test.s: test.cpp.s
+
+.PHONY : test.s
+
+# target to generate assembly for a file
+test.cpp.s:
+	$(MAKE) -f CMakeFiles/test.dir/build.make CMakeFiles/test.dir/test.cpp.s
+.PHONY : test.cpp.s
 
 # Help Target
 help:
@@ -258,6 +304,7 @@ help:
 	@echo "... depend"
 	@echo "... rebuild_cache"
 	@echo "... edit_cache"
+	@echo "... test"
 	@echo "... leader"
 	@echo "... follower"
 	@echo "... follower.o"
@@ -272,6 +319,9 @@ help:
 	@echo "... messages/robot-state.capnp.o"
 	@echo "... messages/robot-state.capnp.i"
 	@echo "... messages/robot-state.capnp.s"
+	@echo "... test.o"
+	@echo "... test.i"
+	@echo "... test.s"
 .PHONY : help
 
 

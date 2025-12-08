@@ -1,6 +1,21 @@
 [
 {
   "directory": "/home/johnkiran/franka-teleop-cpp/build",
+  "command": "/usr/bin/c++   -I/home/johnkiran/franka-teleop-cpp/build -I/home/johnkiran/franka-teleop-cpp/franka_examples -I/usr/include/eigen3  -O3 -DNDEBUG   -pthread -std=gnu++2a -o CMakeFiles/test.dir/test.cpp.o -c /home/johnkiran/franka-teleop-cpp/test.cpp",
+  "file": "/home/johnkiran/franka-teleop-cpp/test.cpp"
+},
+{
+  "directory": "/home/johnkiran/franka-teleop-cpp/build",
+  "command": "/usr/bin/c++   -I/home/johnkiran/franka-teleop-cpp/build -I/home/johnkiran/franka-teleop-cpp/franka_examples -I/usr/include/eigen3  -O3 -DNDEBUG   -pthread -std=gnu++2a -o CMakeFiles/test.dir/franka_examples/examples_common.cpp.o -c /home/johnkiran/franka-teleop-cpp/franka_examples/examples_common.cpp",
+  "file": "/home/johnkiran/franka-teleop-cpp/franka_examples/examples_common.cpp"
+},
+{
+  "directory": "/home/johnkiran/franka-teleop-cpp/build",
+  "command": "/usr/bin/c++   -I/home/johnkiran/franka-teleop-cpp/build -I/home/johnkiran/franka-teleop-cpp/franka_examples -I/usr/include/eigen3  -O3 -DNDEBUG   -pthread -std=gnu++2a -o CMakeFiles/test.dir/messages/robot-state.capnp.c++.o -c /home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.c++",
+  "file": "/home/johnkiran/franka-teleop-cpp/build/messages/robot-state.capnp.c++"
+},
+{
+  "directory": "/home/johnkiran/franka-teleop-cpp/build",
   "command": "/usr/bin/c++   -I/home/johnkiran/franka-teleop-cpp/build -I/home/johnkiran/franka-teleop-cpp/franka_examples -I/usr/include/eigen3  -O3 -DNDEBUG   -pthread -std=gnu++2a -o CMakeFiles/leader.dir/leader.cpp.o -c /home/johnkiran/franka-teleop-cpp/leader.cpp",
   "file": "/home/johnkiran/franka-teleop-cpp/leader.cpp"
 },

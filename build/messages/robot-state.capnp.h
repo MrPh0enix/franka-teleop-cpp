@@ -32,7 +32,7 @@ struct RobotState {
   static constexpr  ::uint32_t MESSAGE_SIZE = 248u;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(df7b72445c5bdd84, 30, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(df7b72445c5bdd84, 31, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -115,6 +115,8 @@ public:
   inline double getJoint6ExtTorque() const;
 
   inline double getJoint7ExtTorque() const;
+
+  inline double getGripperWidth() const;
 
   inline  ::uint8_t getControlRobot() const;
 
@@ -232,6 +234,9 @@ public:
 
   inline double getJoint7ExtTorque();
   inline void setJoint7ExtTorque(double value);
+
+  inline double getGripperWidth();
+  inline void setGripperWidth(double value);
 
   inline  ::uint8_t getControlRobot();
   inline void setControlRobot( ::uint8_t value);
@@ -670,18 +675,32 @@ inline void RobotState::Builder::setJoint7ExtTorque(double value) {
       ::capnp::bounded<28>() * ::capnp::ELEMENTS, value);
 }
 
+inline double RobotState::Reader::getGripperWidth() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<29>() * ::capnp::ELEMENTS);
+}
+
+inline double RobotState::Builder::getGripperWidth() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<29>() * ::capnp::ELEMENTS);
+}
+inline void RobotState::Builder::setGripperWidth(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<29>() * ::capnp::ELEMENTS, value);
+}
+
 inline  ::uint8_t RobotState::Reader::getControlRobot() const {
   return _reader.getDataField< ::uint8_t>(
-      ::capnp::bounded<232>() * ::capnp::ELEMENTS);
+      ::capnp::bounded<240>() * ::capnp::ELEMENTS);
 }
 
 inline  ::uint8_t RobotState::Builder::getControlRobot() {
   return _builder.getDataField< ::uint8_t>(
-      ::capnp::bounded<232>() * ::capnp::ELEMENTS);
+      ::capnp::bounded<240>() * ::capnp::ELEMENTS);
 }
 inline void RobotState::Builder::setControlRobot( ::uint8_t value) {
   _builder.setDataField< ::uint8_t>(
-      ::capnp::bounded<232>() * ::capnp::ELEMENTS, value);
+      ::capnp::bounded<240>() * ::capnp::ELEMENTS, value);
 }
 
 

@@ -232,6 +232,7 @@ void setGripperWidth(const YAML::Node& config) {
 
     //connect to the gripper
     franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
+    
 
     while (running.load()) {
 
@@ -250,23 +251,45 @@ void setGripperWidth(const YAML::Node& config) {
 
 
 
-void recorder(const YAML::Node& config) {
+
+void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
 
     int rec_freq = config["global"]["rec_freq"].as<int>();
 
+    //threshold for closing grippers
+    double gripper_width_thresh = config["gripper"]["grip_threshold"].as<double>();
+    double gripperWidth = 0.0;
+    franka::RobotState leader_state;
+    RobotState::Reader follower_state;
+    
+
     while (running.load()) {
+
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            leader_state = shared_robot_state;
+            follower_state = shared_follower_state;
+            gripperWidth = shared_gripper_width;
+        }
+
+        //start rec
+        double threshold = 0.015;
+        for (size_t i=0; i < home_pos.size(); i++) {
+            if ((!record.load()) && (std::abs(home_pos[i] - leader_state.q[i])) > threshold) {
+                
+                record.store(true);
+                
+            }
+        }
 
         if (record.load()) {
 
             std::ofstream file("recordings/recording" + std::to_string(rec_num.load()) + ".txt", std::ios::app);
 
-            franka::RobotState leader_state;
-            RobotState::Reader follower_state;
-
-            {
-            std::lock_guard<std::mutex> lock(state_mutex);
-            leader_state = shared_robot_state;
-            follower_state = shared_follower_state;
+            //stop recording once grippers are closed
+            if ((gripperWidth < gripper_width_thresh) && (record.load())) {
+                record.store(false);
+                std::cout << "Stopped Rec" << std::endl;
             }
 
             file << "Hello!!!" << "\n";
@@ -298,21 +321,11 @@ int main () {
         //recordings file initialization
         std::filesystem::path recordings_dir = "recordings";
         int count = 0;
-        if (!std::filesystem::exists(recordings_dir)) {
-            std::filesystem::create_directory(recordings_dir);
-            try{
-                std::filesystem::permissions(recordings_dir, std::filesystem::perms::owner_all, std::filesystem::perm_options::replace);
-            } catch (const std::filesystem::filesystem_error& e) {
-                std::cout << "error" << std::endl;
-            }
-            
-            rec_num.store(0);
-        } else {
-            for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
-                count++;
-            }
-            rec_num.store(++count);
+        for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
+            count++;
         }
+        rec_num.store(++count);
+        
 
         // Define PGain and DGain and velo_limits
         std::vector<double> P_gain = config["leader"]["p_vals"].as<std::vector<double>>();
@@ -348,8 +361,8 @@ int main () {
         std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
-        //recorder thread
-        std::thread rec_thread(recorder, std::cref(config));
+        // //recorder thread
+        std::thread rec_thread(recorder, std::cref(config), std::cref(home_pos));
 
         // set collision behavior
         robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
@@ -582,16 +595,6 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-
-            //start rec
-            double threshold = 0.015;
-            for (size_t i=0; i < home_pos.size(); i++) {
-                if (!record.load()) {
-                    if (std::abs(home_pos[i] - joint_pos[i]) > threshold) {
-                        record.store(true);
-                    }
-                }
-            }
 
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 

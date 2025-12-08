@@ -34,6 +34,9 @@ configure_file(
     COPYONLY
 )
 
+# make rec directory
+file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/recordings)
+
 
 add_executable(follower
             follower.cpp

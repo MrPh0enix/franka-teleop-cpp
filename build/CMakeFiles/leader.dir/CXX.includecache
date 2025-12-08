@@ -37,7 +37,11 @@ yaml-cpp/yaml.h
 -
 fstream
 -
+filesystem
+-
 cmath
+-
+algorithm
 -
 termios.h
 -
@@ -58,6 +62,8 @@ messages/robot-state.capnp.h
 franka/model.h
 -
 franka/robot.h
+-
+franka/gripper.h
 -
 franka/exception.h
 -

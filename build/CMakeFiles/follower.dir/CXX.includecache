@@ -33,6 +33,8 @@ thread
 -
 atomic
 -
+fstream
+-
 yaml-cpp/yaml.h
 -
 termios.h
@@ -54,6 +56,8 @@ messages/robot-state.capnp.h
 franka/model.h
 -
 franka/robot.h
+-
+franka/gripper.h
 -
 franka/exception.h
 -

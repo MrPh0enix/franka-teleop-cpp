@@ -32,7 +32,7 @@ struct RobotState {
   static constexpr  ::uint32_t MESSAGE_SIZE = 248u;
 
   struct _capnpPrivate {
-    CAPNP_DECLARE_STRUCT_HEADER(df7b72445c5bdd84, 30, 0)
+    CAPNP_DECLARE_STRUCT_HEADER(df7b72445c5bdd84, 31, 0)
     #if !CAPNP_LITE
     static constexpr ::capnp::_::RawBrandedSchema const* brand() { return &schema->defaultBrand; }
     #endif  // !CAPNP_LITE
@@ -117,6 +117,8 @@ public:
   inline double getJoint7ExtTorque() const;
 
   inline  ::uint8_t getControlRobot() const;
+
+  inline double getJoint7MeasuredTorqueDer() const;
 
 private:
   ::capnp::_::StructReader _reader;
@@ -235,6 +237,9 @@ public:
 
   inline  ::uint8_t getControlRobot();
   inline void setControlRobot( ::uint8_t value);
+
+  inline double getJoint7MeasuredTorqueDer();
+  inline void setJoint7MeasuredTorqueDer(double value);
 
 private:
   ::capnp::_::StructBuilder _builder;
@@ -682,6 +687,20 @@ inline  ::uint8_t RobotState::Builder::getControlRobot() {
 inline void RobotState::Builder::setControlRobot( ::uint8_t value) {
   _builder.setDataField< ::uint8_t>(
       ::capnp::bounded<232>() * ::capnp::ELEMENTS, value);
+}
+
+inline double RobotState::Reader::getJoint7MeasuredTorqueDer() const {
+  return _reader.getDataField<double>(
+      ::capnp::bounded<30>() * ::capnp::ELEMENTS);
+}
+
+inline double RobotState::Builder::getJoint7MeasuredTorqueDer() {
+  return _builder.getDataField<double>(
+      ::capnp::bounded<30>() * ::capnp::ELEMENTS);
+}
+inline void RobotState::Builder::setJoint7MeasuredTorqueDer(double value) {
+  _builder.setDataField<double>(
+      ::capnp::bounded<30>() * ::capnp::ELEMENTS, value);
 }
 
 

@@ -5,7 +5,6 @@
 #include <mutex>
 #include <thread>
 #include <atomic>
-#include <fstream>
 #include <yaml-cpp/yaml.h>
 
 // Key listener
@@ -25,7 +24,6 @@
 //franka libs
 #include <franka/model.h>
 #include <franka/robot.h>
-#include <franka/gripper.h>
 #include <franka/exception.h>
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
@@ -36,13 +34,10 @@
 
 RobotState::Reader shared_leader_state;
 franka::RobotState shared_robot_state;
-// double shared_gripper_width = 0.08;
 std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
-std::atomic<char> control_rob{'L'}; //default to leader
-
-
+std::atomic<char> control_rob{'L'}; //default to leader(L)
 
 
 
@@ -62,21 +57,17 @@ void pubThread (const YAML::Node& config) {
 
     const int pub_freq = config["global"]["freq"].as<int>(); //Hz 
 
-
     while (running.load()) {
-
 
         //build message
         capnp::MallocMessageBuilder message;
         RobotState::Builder follower_state = message.initRoot<RobotState>();
         franka::RobotState state_to_publish;
-        // double gripperWidth;
 
-        // {
-        //     std::lock_guard<std::mutex> lock(state_mutex);
-        //     state_to_publish = shared_robot_state;
-        //     gripperWidth = shared_gripper_width;
-        // }
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            state_to_publish = shared_robot_state;
+        }
 
         follower_state.setTime(123456);
         follower_state.setJoint1Pos(state_to_publish.q[0]);
@@ -107,9 +98,7 @@ void pubThread (const YAML::Node& config) {
         follower_state.setJoint5ExtTorque(state_to_publish.tau_ext_hat_filtered[4]);
         follower_state.setJoint6ExtTorque(state_to_publish.tau_ext_hat_filtered[5]);
         follower_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
-        // follower_state.setGripperWidth(gripperWidth);
         follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
-        follower_state.setJoint7MeasuredTorqueDer(state_to_publish.dtau_J[6]);
 
         kj::VectorOutputStream state_message;
         capnp::writeMessage(state_message, message);
@@ -219,40 +208,6 @@ void keyListener() {
 
 
 
-// void setGripperWidth(const YAML::Node& config) {
-
-//     //connect to the gripper
-//     franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
-
-//     while (running.load()) {
-
-//         //read gripper state
-//         franka::GripperState gripperState = gripper.readOnce();
-//         double gripperWidth =  gripperState.width;
-
-//         RobotState::Reader leader_state;
-
-//         {
-//             std::lock_guard<std::mutex> lock(state_mutex);
-//             shared_gripper_width = gripperWidth;
-//             leader_state = shared_leader_state;
-//         }
-
-
-//         double leader_gripper_width = leader_state.getGripperWidth();
-
-//         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-//             gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-//         } else if (leader_gripper_width >= 0.04) {
-//             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
-//         }
-        
-//     }
-
-// }
-
-
-
 
 int main () {
 
@@ -277,7 +232,6 @@ int main () {
         std::vector<double> C_v = config["global"]["C_v"].as<std::vector<double>>();
         std::vector<double> C_y = config["global"]["C_y"].as<std::vector<double>>();
         std::vector<double> C_f = config["global"]["C_f"].as<std::vector<double>>();
-        std::vector<double> vel_coeff = config["global"]["vel_coeff"].as<std::vector<double>>();
 
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
@@ -296,8 +250,6 @@ int main () {
         std::thread sub_thread(subThread, std::cref(config));
         // start pub thread
         std::thread pub_thread(pubThread, std::cref(config));
-        // start gripper thread
-        // std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
 
@@ -307,14 +259,7 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
-        
-        std::ofstream file("output_follower.txt", std::ios::app);
-        if (!file.is_open()) {
-            std::cerr << "Failed to open file\n";
-            return 1;
-        }
 
-        
         
 
         // lambda function to compute torques
@@ -348,8 +293,6 @@ int main () {
                 leader_state.getJoint7Pos()
             };
 
-
-
             // // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
             // std::array<double, 7> target_pos = leader_pos;
@@ -359,7 +302,7 @@ int main () {
                 double vel = joint_vel[i];
 
                 if (i == 6) {
-                    double pos_error = target_pos[i] - joint_pos[i];
+                    double pos_error = target_pos[i] - joint_pos[i] - 1.57;
                     torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
                 } else {
                     double pos_error = target_pos[i] - joint_pos[i];
@@ -516,17 +459,6 @@ int main () {
                 leader_state.getJoint7ExtTorque()
             };
 
-
-            std::array<double, 7> leader_trq = {
-                leader_state.getJoint1Torque(),
-                leader_state.getJoint2Torque(),
-                leader_state.getJoint3Torque(),
-                leader_state.getJoint4Torque(),
-                leader_state.getJoint5Torque(),
-                leader_state.getJoint6Torque(),
-                leader_state.getJoint7Torque()
-            };
-
             
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
@@ -535,9 +467,6 @@ int main () {
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
-            //coriolis
-            std::array<double, 7> coriolis = model.coriolis(robot_state);
-
 
             // Compute accelerations
             for (int i = 0; i < 7; ++i) {
@@ -545,7 +474,7 @@ int main () {
                 double vel_error = joint_vel[i] - leader_vel[i];
                 double vel_tot = joint_vel[i] + leader_vel[i];
                 double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-                if ((i == 6) || (i == 5)) {
+                if (i == 6) {
                     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 }
@@ -555,11 +484,10 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if ((i == 6) || (i == 5)) {
+                if (i == 6) {
                     for (int j = 0; j < 7; j++) {
                         torques[i] += MOI[i*7 + j] * acc[j];
                     }
-                    torques[i] += (vel_coeff[i] * joint_vel[i]);
                 } 
             }
 
@@ -597,11 +525,7 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-
-            //write to file
-            file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
-
-            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
 
@@ -634,8 +558,6 @@ int main () {
         sub_thread.join();
         pub_thread.join();
         key_thread.join();
-
-        file.close();
 
 
     } catch (const std::exception& ex) {

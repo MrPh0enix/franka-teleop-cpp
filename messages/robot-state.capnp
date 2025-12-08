@@ -31,6 +31,7 @@ struct RobotState {
   joint5ExtTorque @26 :Float64 = 0;
   joint6ExtTorque @27 :Float64 = 0;
   joint7ExtTorque @28 :Float64 = 0;
-  controlRobot @29 :UInt8 = 0;
-  joint7MeasuredTorqueDer @30 :Float64 = 0;
+  gripperWidth @29 :Float64 = 0;
+  controlRobot @30 :UInt8 = 0;
+  joint7MeasuredTorqueDer @31 :Float64 = 0;
 } 

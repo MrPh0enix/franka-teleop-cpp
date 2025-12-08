@@ -36,7 +36,7 @@
 
 RobotState::Reader shared_leader_state;
 franka::RobotState shared_robot_state;
-// double shared_gripper_width = 0.08;
+double shared_gripper_width = 0.08;
 std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
@@ -70,13 +70,13 @@ void pubThread (const YAML::Node& config) {
         capnp::MallocMessageBuilder message;
         RobotState::Builder follower_state = message.initRoot<RobotState>();
         franka::RobotState state_to_publish;
-        // double gripperWidth;
+        double gripperWidth;
 
-        // {
-        //     std::lock_guard<std::mutex> lock(state_mutex);
-        //     state_to_publish = shared_robot_state;
-        //     gripperWidth = shared_gripper_width;
-        // }
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            state_to_publish = shared_robot_state;
+            gripperWidth = shared_gripper_width;
+        }
 
         follower_state.setTime(123456);
         follower_state.setJoint1Pos(state_to_publish.q[0]);
@@ -100,16 +100,16 @@ void pubThread (const YAML::Node& config) {
         follower_state.setJoint5Torque(state_to_publish.tau_J[4]);
         follower_state.setJoint6Torque(state_to_publish.tau_J[5]);
         follower_state.setJoint7Torque(state_to_publish.tau_J[6]);
-        follower_state.setJoint1ExtTorque(state_to_publish.tau_ext_hat_filtered[0]);
-        follower_state.setJoint2ExtTorque(state_to_publish.tau_ext_hat_filtered[1]);
-        follower_state.setJoint3ExtTorque(state_to_publish.tau_ext_hat_filtered[2]);
-        follower_state.setJoint4ExtTorque(state_to_publish.tau_ext_hat_filtered[3]);
-        follower_state.setJoint5ExtTorque(state_to_publish.tau_ext_hat_filtered[4]);
-        follower_state.setJoint6ExtTorque(state_to_publish.tau_ext_hat_filtered[5]);
-        follower_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
-        // follower_state.setGripperWidth(gripperWidth);
+        follower_state.setJoint1ExtTorque(state_to_publish.tau_J_d[0]);
+        follower_state.setJoint2ExtTorque(state_to_publish.tau_J_d[1]);
+        follower_state.setJoint3ExtTorque(state_to_publish.tau_J_d[2]);
+        follower_state.setJoint4ExtTorque(state_to_publish.tau_J_d[3]);
+        follower_state.setJoint5ExtTorque(state_to_publish.tau_J_d[4]);
+        follower_state.setJoint6ExtTorque(state_to_publish.tau_J_d[5]);
+        follower_state.setJoint7ExtTorque(state_to_publish.tau_J_d[6]);
+        follower_state.setGripperWidth(gripperWidth);
         follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
-        follower_state.setJoint7MeasuredTorqueDer(state_to_publish.dtau_J[6]);
+        follower_state.setJoint7MeasuredTorqueDer(state_to_publish.tau_J_d[6]);
 
         kj::VectorOutputStream state_message;
         capnp::writeMessage(state_message, message);
@@ -219,37 +219,37 @@ void keyListener() {
 
 
 
-// void setGripperWidth(const YAML::Node& config) {
+void setGripperWidth(const YAML::Node& config) {
 
-//     //connect to the gripper
-//     franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
+    //connect to the gripper
+    franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
 
-//     while (running.load()) {
+    while (running.load()) {
 
-//         //read gripper state
-//         franka::GripperState gripperState = gripper.readOnce();
-//         double gripperWidth =  gripperState.width;
+        //read gripper state
+        franka::GripperState gripperState = gripper.readOnce();
+        double gripperWidth =  gripperState.width;
 
-//         RobotState::Reader leader_state;
+        RobotState::Reader leader_state;
 
-//         {
-//             std::lock_guard<std::mutex> lock(state_mutex);
-//             shared_gripper_width = gripperWidth;
-//             leader_state = shared_leader_state;
-//         }
+        {
+            std::lock_guard<std::mutex> lock(state_mutex);
+            shared_gripper_width = gripperWidth;
+            leader_state = shared_leader_state;
+        }
 
 
-//         double leader_gripper_width = leader_state.getGripperWidth();
+        double leader_gripper_width = leader_state.getGripperWidth();
 
-//         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-//             gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-//         } else if (leader_gripper_width >= 0.04) {
-//             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
-//         }
+        if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
+            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
+        } else if (leader_gripper_width >= 0.04) {
+            gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
+        }
         
-//     }
+    }
 
-// }
+}
 
 
 
@@ -297,7 +297,7 @@ int main () {
         // start pub thread
         std::thread pub_thread(pubThread, std::cref(config));
         // start gripper thread
-        // std::thread gripper_thread(setGripperWidth, std::cref(config));
+        std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
 
@@ -530,7 +530,7 @@ int main () {
             
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+            std::array<double, 7> ext_trq = robot_state.tau_J_d;
 
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
@@ -545,8 +545,8 @@ int main () {
                 double vel_error = joint_vel[i] - leader_vel[i];
                 double vel_tot = joint_vel[i] + leader_vel[i];
                 double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-                if ((i == 6) || (i == 5)) {
-                    acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                if ((i == 5)) {
+                    acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 }
                 
@@ -555,7 +555,7 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if ((i == 6) || (i == 5)) {
+                if ((i == 5)) {
                     for (int j = 0; j < 7; j++) {
                         torques[i] += MOI[i*7 + j] * acc[j];
                     }

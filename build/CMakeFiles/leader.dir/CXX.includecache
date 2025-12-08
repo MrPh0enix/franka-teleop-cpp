@@ -59,6 +59,8 @@ franka/model.h
 -
 franka/robot.h
 -
+franka/gripper.h
+-
 franka/exception.h
 -
 franka/rate_limiting.h

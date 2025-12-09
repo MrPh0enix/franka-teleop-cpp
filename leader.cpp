@@ -48,8 +48,9 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
-std::atomic<bool> record{false};
+
 std::atomic<int> rec_num{0};
+std::atomic<char> mode{'T'};
 
 
 
@@ -232,6 +233,8 @@ void setGripperWidth(const YAML::Node& config) {
 
     //connect to the gripper
     franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
+
+    double grip_threshold = config["gripper"]["grip_threshold"].as<double>();
     
 
     while (running.load()) {
@@ -245,6 +248,14 @@ void setGripperWidth(const YAML::Node& config) {
             shared_gripper_width = gripperWidth;
         }
 
+        if ((mode.load() != 'O') && (gripperWidth < grip_threshold)) {
+            mode.store('O');
+            std::this_thread::sleep_for(std::chrono::seconds(5));
+            rec_num.store(rec_num.load() + 1); // increment recording
+            gripper.move(0.08, config["gripper"]["speed"].as<double>());
+        }
+            
+
     }
 
 }
@@ -256,9 +267,6 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
 
     int rec_freq = config["global"]["rec_freq"].as<int>();
 
-    //threshold for closing grippers
-    double gripper_width_thresh = config["gripper"]["grip_threshold"].as<double>();
-    double gripperWidth = 0.0;
     franka::RobotState leader_state;
     RobotState::Reader follower_state;
     
@@ -269,28 +277,12 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
             std::lock_guard<std::mutex> lock(state_mutex);
             leader_state = shared_robot_state;
             follower_state = shared_follower_state;
-            gripperWidth = shared_gripper_width;
+            
         }
 
-        //start rec
-        double threshold = 0.015;
-        for (size_t i=0; i < home_pos.size(); i++) {
-            if ((!record.load()) && (std::abs(home_pos[i] - leader_state.q[i])) > threshold) {
-                
-                record.store(true);
-                
-            }
-        }
-
-        if (record.load()) {
+        if (mode.load() == 'R') {
 
             std::ofstream file("recordings/recording" + std::to_string(rec_num.load()) + ".txt", std::ios::app);
-
-            //stop recording once grippers are closed
-            if ((gripperWidth < gripper_width_thresh) && (record.load())) {
-                record.store(false);
-                std::cout << "Stopped Rec" << std::endl;
-            }
 
             file << "Hello!!!" << "\n";
 
@@ -350,8 +342,8 @@ int main () {
 
         // move robot to start
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
+        MotionGenerator motion_generator_home(0.5, home_pos);
+        robot.control(motion_generator_home);
 
         // start publisher thread
         std::thread pub_thread(pubThread, std::cref(config));
@@ -361,7 +353,7 @@ int main () {
         std::thread gripper_thread(setGripperWidth, std::cref(config));
         //key listener thread
         std::thread key_thread(keyListener);
-        // //recorder thread
+        //recorder thread
         std::thread rec_thread(recorder, std::cref(config), std::cref(home_pos));
 
         // set collision behavior
@@ -569,10 +561,10 @@ int main () {
 
         // control callback function
         auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
-            
-            if (!running.load()) {
 
-                std::cout << "Exiting .... " << std::endl;
+            char m = mode.load();
+
+            if ((!running.load()) || (m == 'O')) {
                 
                 return franka::MotionFinished(franka::Torques({0, 0, 0, 0, 0, 0, 0}));
                 
@@ -596,6 +588,16 @@ int main () {
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
 
+            
+            //start rec
+            double threshold = 0.015;
+            for (size_t i=0; i < home_pos.size(); i++) {
+                if ((m != 'R') && (std::abs(home_pos[i] - joint_pos[i])) > threshold) {
+                    mode.store('R'); 
+                }
+            }
+            
+
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
@@ -608,9 +610,18 @@ int main () {
         while (running.load()) {
 
             try {
+                char m = mode.load();
+                if (m == 'T' || m == 'R') {
+                    //execute control loop
+                    robot.control(trq_control_callback);
+                } else if (m == 'O') {
+                    //reset to home
+                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                    robot.control(motion_generator_home);
+                    mode.store('T');
+                    
+                }
 
-                //execute control loop
-                robot.control(trq_control_callback);
 
             } catch (const franka::Exception& ex) {
 

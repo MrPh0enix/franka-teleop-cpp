@@ -32,6 +32,6 @@ follower:
 
 gripper:
   object_width: 0.0454
-  gripping_force: 3
+  gripping_force: 20
   speed: 0.1
   grip_threshold: 0.05

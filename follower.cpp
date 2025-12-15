@@ -545,22 +545,29 @@ int main () {
                 double vel_error = joint_vel[i] - leader_vel[i];
                 double vel_tot = joint_vel[i] + leader_vel[i];
                 double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-                if ((i == 5)) {
-                    acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                }
+                // if ((i == 0) || (i == 1) || (i == 2))   {
+                //     acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                //         - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                // }
+                acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                        - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 
             }
 
 
             // Compute torques
             for (int i = 0; i < 7; i++) {
-                if ((i == 5)) {
-                    for (int j = 0; j < 7; j++) {
-                        torques[i] += MOI[i*7 + j] * acc[j];
-                    }
-                    torques[i] += (vel_coeff[i] * joint_vel[i]);
-                } 
+                // if ((i == 0) || (i == 1) || (i == 2))   {
+                //     for (int j = 0; j < 7; j++) {
+                //         torques[i] += MOI[i*7 + j] * acc[j];
+                //     }
+                //     torques[i] += (vel_coeff[i] * joint_vel[i]);
+                // }
+                for (int j = 0; j < 7; j++) {
+                    torques[i] += MOI[i*7 + j] * acc[j];
+                }
+                torques[i] += (vel_coeff[i] * joint_vel[i]);
+                
             }
 
 

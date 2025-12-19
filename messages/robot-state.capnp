@@ -31,6 +31,22 @@ struct RobotState {
   joint5ExtTorque @26 :Float64 = 0;
   joint6ExtTorque @27 :Float64 = 0;
   joint7ExtTorque @28 :Float64 = 0;
-  gripperWidth @29 :Float64 = 0;
-  controlRobot @30 :UInt8 = 0;
+  endEffPoseVal1 @29 :Float64 = 0;
+  endEffPoseVal2 @30 :Float64 = 0;
+  endEffPoseVal3 @31 :Float64 = 0;
+  endEffPoseVal4 @32 :Float64 = 0;
+  endEffPoseVal5 @33 :Float64 = 0;
+  endEffPoseVal6 @34 :Float64 = 0;
+  endEffPoseVal7 @35 :Float64 = 0;
+  endEffPoseVal8 @36 :Float64 = 0;
+  endEffPoseVal9 @37 :Float64 = 0;
+  endEffPoseVal10 @38 :Float64 = 0;
+  endEffPoseVal11 @39 :Float64 = 0;
+  endEffPoseVal12 @40 :Float64 = 0;
+  endEffPoseVal13 @41 :Float64 = 0;
+  endEffPoseVal14 @42 :Float64 = 0;
+  endEffPoseVal15 @43 :Float64 = 0;
+  endEffPoseVal16 @44 :Float64 = 0;
+  gripperWidth @45 :Float64 = 0;
+  controlRobot @46 :UInt8 = 0;
 } 

@@ -1,0 +1,4 @@
+1. automatic file and folder naming.
+2. Second exp trigger points.
+3. playing nwith offsets for variable width objects
+4. 

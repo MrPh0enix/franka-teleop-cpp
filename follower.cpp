@@ -124,6 +124,7 @@ void pubThread (const YAML::Node& config) {
         follower_state.setEndEffPoseVal15(state_to_publish.O_T_EE[14]);
         follower_state.setEndEffPoseVal16(state_to_publish.O_T_EE[15]);
         follower_state.setGripperWidth(gripperWidth);
+        follower_state.setFollowerEEOffset(0);
         follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
     
         kj::VectorOutputStream state_message;
@@ -278,7 +279,7 @@ int main () {
     try {
 
         // config
-        YAML::Node config = YAML::LoadFile("teleop_config.yml");
+        YAML::Node config = YAML::LoadFile("../teleop_config.yml");
 
         // Define PGain and DGain and velo_limits
         std::vector<double> P_gain = config["follower"]["p_vals"].as<std::vector<double>>();
@@ -313,8 +314,8 @@ int main () {
         std::thread pub_thread(pubThread, std::cref(config));
         // start gripper thread
         std::thread gripper_thread(setGripperWidth, std::cref(config));
-        //key listener thread
-        std::thread key_thread(keyListener);
+        // //key listener thread
+        // std::thread key_thread(keyListener);
 
         // set collision behavior
         robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
@@ -413,9 +414,15 @@ int main () {
                 leader_state.getJoint7Pos()
             };
 
-            leader_pos[6] += 1.57;
+            
+            // offset and joint limits condition
+            int offset_deg = leader_state.getFollowerEEOffset();
+            double offset_rad = offset_deg * (M_PI / 180.0);
+            leader_pos[6] += offset_rad;
             if (leader_pos[6] >= 2.8873) {
                 leader_pos[6] = 2.8873;
+            } else if (leader_pos[6] <= -2.8873) {
+                leader_pos[6] = -2.8873;
             }
             
 
@@ -503,7 +510,7 @@ int main () {
         running.store(false);
         sub_thread.join();
         pub_thread.join();
-        key_thread.join();
+        // key_thread.join();
 
 
     } catch (const std::exception& ex) {

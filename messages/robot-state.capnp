@@ -48,5 +48,6 @@ struct RobotState {
   endEffPoseVal15 @43 :Float64 = 0;
   endEffPoseVal16 @44 :Float64 = 0;
   gripperWidth @45 :Float64 = 0;
-  controlRobot @46 :UInt8 = 0;
-} 
+  followerEEOffset @46 :Int8 = 0;
+  controlRobot @47 :UInt8 = 0;
+}

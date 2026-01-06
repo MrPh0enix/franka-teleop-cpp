@@ -27,13 +27,6 @@ include_directories(${CMAKE_SOURCE_DIR}/franka_examples)
 # include Eigen3
 include_directories(${EIGEN3_INCLUDE_DIR})
 
-# copy config file to build
-configure_file(
-    ${CMAKE_SOURCE_DIR}/teleop_config.yml
-    ${CMAKE_CURRENT_BINARY_DIR}/teleop_config.yml
-    COPYONLY
-)
-
 # make rec directory
 file(MAKE_DIRECTORY ${CMAKE_BINARY_DIR}/recordings)
 
@@ -61,21 +54,6 @@ add_executable(leader
 
 # Link libraries
 target_link_libraries(leader
-    Franka::Franka
-    CapnProto::capnp
-    CapnProto::kj
-    yaml-cpp
-)
-
-
-add_executable(test 
-            test.cpp
-            franka_examples/examples_common.cpp
-            ${CAPNP_SRCS}
-            ${CAPNP_HDRS})
-
-# Link libraries
-target_link_libraries(test
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj

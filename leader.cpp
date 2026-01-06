@@ -49,10 +49,14 @@ std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
-std::atomic<int> rec_num{0};
-std::atomic<char> mode{'T'};
+std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset
 
-
+// recording file variables and fns
+std::ifstream lookup_file;
+std::filesystem::path curr_rec_dir;
+std::atomic<int> trial_num{0};
+std::atomic<int> offset_deg{0};
+std::atomic<int> object_offset{0};
 
 
 void pubThread (const YAML::Node& config) {
@@ -135,6 +139,7 @@ void pubThread (const YAML::Node& config) {
         leader_state.setEndEffPoseVal15(state_to_publish.O_T_EE[14]);
         leader_state.setEndEffPoseVal16(state_to_publish.O_T_EE[15]);
         leader_state.setGripperWidth(gripperWidth);
+        leader_state.setFollowerEEOffset(offset_deg.load());
         leader_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
         
 
@@ -244,6 +249,28 @@ void keyListener() {
 }
 
 
+void setNextIter() { 
+    
+    std::string line;
+    if (!std::getline(lookup_file, line)) {
+        std::cout << "End of experiment !!!!!" << std::endl;
+        running.store(false);
+    };
+    std::stringstream ss(line);
+    std::vector<std::string> values;
+    std::string cell;
+
+    while (std::getline(ss, cell, ',')) {
+        values.push_back(cell);
+    }
+
+    trial_num.store(std::stoi(values[0])); 
+    offset_deg.store(std::stoi(values[2]));
+    object_offset.store(std::stoi(values[3]));
+    std::cout << "Rec updated to" << "_" << trial_num.load() << "_" << offset_deg.load() << "_" << object_offset.load() << std::endl;
+
+}
+
 
 void setGripperWidth(const YAML::Node& config) {
 
@@ -267,7 +294,6 @@ void setGripperWidth(const YAML::Node& config) {
         if ((mode.load() != 'O') && (gripperWidth < grip_threshold)) {
             mode.store('O');
             std::this_thread::sleep_for(std::chrono::seconds(5));
-            rec_num.store(rec_num.load() + 1); // increment recording
             gripper.move(0.08, config["gripper"]["speed"].as<double>());
         }
             
@@ -275,6 +301,7 @@ void setGripperWidth(const YAML::Node& config) {
     }
 
 }
+
 
 
 void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
@@ -295,9 +322,9 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
 
         if (mode.load() == 'R') {
 
-            std::ofstream file("recordings/recording" + std::to_string(rec_num.load()) + ".txt", std::ios::app);
+            std::ofstream file(curr_rec_dir.string() + "/trial" + std::to_string(trial_num.load()) + "_" + std::to_string(offset_deg.load()) + "_" + std::to_string(object_offset.load()) + ".txt", std::ios::app);
 
-            // Index: Follower positions (7 vals), Follower Velocities (7 vals), 
+            // std::cout << "Rec.........." << std::endl;
 
             file << follower_state.getJoint1Pos() << "," << follower_state.getJoint2Pos() << "," << follower_state.getJoint3Pos() << "," << follower_state.getJoint4Pos() << "," << follower_state.getJoint5Pos() << "," << follower_state.getJoint6Pos() << "," << follower_state.getJoint7Pos() << "," 
             << follower_state.getJoint1Torque() << "," << follower_state.getJoint2Torque() << "," << follower_state.getJoint3Torque() << "," << follower_state.getJoint4Torque() << "," << follower_state.getJoint5Torque() << "," << follower_state.getJoint6Torque() << "," << follower_state.getJoint7Torque() << "," 
@@ -307,6 +334,8 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
             
 
             file.close();
+        } else {
+            // std::cout << "Not rec" << std::endl;
         }
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000/rec_freq));
@@ -318,25 +347,57 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
 
 
 
-int main () {
+int main (int argc, char* argv[]) {
 
     // scale for P and D values
     constexpr double scale = 1.3;
+
+    if (argc < 2) {
+        std::cout << "Usage: ./leader <../lookups/lookup_file_name.csv>\n";
+        return -1;
+    }
 
     
     try {
 
 
         // config
-        YAML::Node config = YAML::LoadFile("teleop_config.yml");
+        YAML::Node config = YAML::LoadFile("../teleop_config.yml");
+
+        //lookup table initialization
+        lookup_file.open(argv[1]);
+        std::string line;
+        std::getline(lookup_file, line); //remove header
 
         //recordings file initialization
-        std::filesystem::path recordings_dir = "recordings";
-        int count = 0;
-        for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
-            count++;
+        std::filesystem::path path_to_lookup(argv[1]);
+        std::string file_name = path_to_lookup.stem().string();
+        curr_rec_dir = "../recordings/" + file_name;
+        if (std::filesystem::create_directories(curr_rec_dir)) {
+            std::filesystem::permissions(
+                curr_rec_dir,
+                std::filesystem::perms::owner_all |
+                std::filesystem::perms::group_read | std::filesystem::perms::group_exec |
+                std::filesystem::perms::others_read | std::filesystem::perms::others_exec,
+                std::filesystem::perm_options::replace
+            );
+            std::cout << "Current participant directory created\n";
+        } else {
+            std::cout << "Current participant directory already exists. Checking for partially completed experiment....\n";
+            for (const auto& entry : std::filesystem::directory_iterator(curr_rec_dir)) {
+                //remove experiment iteration if already recorded
+                std::getline(lookup_file, line);
+            }
         }
-        rec_num.store(++count);
+
+        setNextIter(); //set initial rec params
+        
+        // std::filesystem::path recordings_dir = "recordings";
+        // int count = 0;
+        // for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
+        //     count++;
+        // }
+        // trial_num.store(++count);
         
 
         // Define PGain and DGain and velo_limits
@@ -372,9 +433,9 @@ int main () {
         std::thread sub_thread(subThread, std::cref(config));
         // start gripper thread
         std::thread gripper_thread(setGripperWidth, std::cref(config));
-        //key listener thread
-        std::thread key_thread(keyListener);
-        //recorder thread
+        // // key listener thread
+        // std::thread key_thread(keyListener);
+        // recorder thread
         std::thread rec_thread(recorder, std::cref(config), std::cref(home_pos));
 
         // set collision behavior
@@ -476,11 +537,14 @@ int main () {
             
             //start rec
             double threshold = 0.015;
-            for (size_t i=0; i < home_pos.size(); i++) {
-                if ((m != 'R') && (std::abs(home_pos[i] - joint_pos[i])) > threshold) {
-                    mode.store('R'); 
+            if (m != 'R') {
+                for (size_t i=0; i < home_pos.size(); i++) {
+                    if ((std::abs(home_pos[i] - joint_pos[i])) > threshold) {
+                        mode.store('R'); 
+                    }
                 }
             }
+            
             
 
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
@@ -503,6 +567,7 @@ int main () {
                     //reset to home
                     std::this_thread::sleep_for(std::chrono::seconds(10));
                     robot.control(motion_generator_home);
+                    setNextIter(); //set the next recording params
                     mode.store('T');
                     
                 }
@@ -523,7 +588,7 @@ int main () {
         running.store(false);
         pub_thread.join();
         sub_thread.join();
-        key_thread.join();
+        // key_thread.join();
         rec_thread.join();
 
     } catch (const std::exception& ex) {

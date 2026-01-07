@@ -49,7 +49,7 @@ std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
-std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset
+std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset, E: End
 
 // recording file variables and fns
 std::ifstream lookup_file;
@@ -255,21 +255,23 @@ void setNextIter() {
     std::string line;
     if (!std::getline(lookup_file, line)) {
         std::cout << "End of experiment !!!!!" << std::endl;
+        mode.store('E');
+        std::this_thread::sleep_for(std::chrono::seconds(5));
         running.store(false);
+    } else {
+        std::stringstream ss(line);
+        std::vector<std::string> values;
+        std::string cell;
+
+        while (std::getline(ss, cell, ',')) {
+            values.push_back(cell);
+        }
+
+        trial_num.store(std::stoi(values[0])); 
+        offset_deg.store(std::stoi(values[2]));
+        object_offset.store(std::stoi(values[3]));
+        std::cout << "Rec updated to" << "_" << trial_num.load() << "_" << offset_deg.load() << "_" << object_offset.load() << std::endl;
     };
-    std::stringstream ss(line);
-    std::vector<std::string> values;
-    std::string cell;
-
-    while (std::getline(ss, cell, ',')) {
-        values.push_back(cell);
-    }
-
-    trial_num.store(std::stoi(values[0])); 
-    offset_deg.store(std::stoi(values[2]));
-    object_offset.store(std::stoi(values[3]));
-    std::cout << "Rec updated to" << "_" << trial_num.load() << "_" << offset_deg.load() << "_" << object_offset.load() << std::endl;
-
 }
 
 
@@ -327,11 +329,13 @@ void recorder(const YAML::Node& config, const std::array<double, 7>& home_pos) {
 
             // std::cout << "Rec.........." << std::endl;
 
-            file << follower_state.getJoint1Pos() << "," << follower_state.getJoint2Pos() << "," << follower_state.getJoint3Pos() << "," << follower_state.getJoint4Pos() << "," << follower_state.getJoint5Pos() << "," << follower_state.getJoint6Pos() << "," << follower_state.getJoint7Pos() << "," 
+            file << follower_state.getTime() << "," 
+            << follower_state.getJoint1Pos() << "," << follower_state.getJoint2Pos() << "," << follower_state.getJoint3Pos() << "," << follower_state.getJoint4Pos() << "," << follower_state.getJoint5Pos() << "," << follower_state.getJoint6Pos() << "," << follower_state.getJoint7Pos() << "," 
             << follower_state.getJoint1Torque() << "," << follower_state.getJoint2Torque() << "," << follower_state.getJoint3Torque() << "," << follower_state.getJoint4Torque() << "," << follower_state.getJoint5Torque() << "," << follower_state.getJoint6Torque() << "," << follower_state.getJoint7Torque() << "," 
             << follower_state.getJoint1Vel() << "," << follower_state.getJoint2Vel() << "," << follower_state.getJoint3Vel() << "," << follower_state.getJoint4Vel() << "," << follower_state.getJoint5Vel() << "," << follower_state.getJoint6Vel() << "," << follower_state.getJoint7Vel() << "," 
             << follower_state.getEndEffPoseVal1() << "," << follower_state.getEndEffPoseVal2() << "," << follower_state.getEndEffPoseVal3() << "," << follower_state.getEndEffPoseVal4() << "," << follower_state.getEndEffPoseVal5() << "," << follower_state.getEndEffPoseVal6() << "," << follower_state.getEndEffPoseVal7() << "," 
-            << follower_state.getEndEffPoseVal8() << "," << follower_state.getEndEffPoseVal9() << "," << follower_state.getEndEffPoseVal10() << "," << follower_state.getEndEffPoseVal11() << "," << follower_state.getEndEffPoseVal12() << "," << follower_state.getEndEffPoseVal13() << "," << follower_state.getEndEffPoseVal14() << "," << follower_state.getEndEffPoseVal15() << "," << follower_state.getEndEffPoseVal16() << "," << "\n";
+            << follower_state.getEndEffPoseVal8() << "," << follower_state.getEndEffPoseVal9() << "," << follower_state.getEndEffPoseVal10() << "," << follower_state.getEndEffPoseVal11() << "," << follower_state.getEndEffPoseVal12() << "," << follower_state.getEndEffPoseVal13() << "," << follower_state.getEndEffPoseVal14() << "," << follower_state.getEndEffPoseVal15() << "," << follower_state.getEndEffPoseVal16() << "," 
+            << "\n";
             
 
             file.close();
@@ -561,8 +565,9 @@ int main (int argc, char* argv[]) {
                     //reset to home
                     std::this_thread::sleep_for(std::chrono::seconds(10));
                     robot.control(motion_generator_home);
-                    setNextIter(); //set the next recording params
                     mode.store('T');
+                    setNextIter(); //set the next recording params
+                    
                     
                 }
 
@@ -582,6 +587,7 @@ int main (int argc, char* argv[]) {
         running.store(false);
         pub_thread.join();
         sub_thread.join();
+        gripper_thread.join();
         // key_thread.join();
         rec_thread.join();
 

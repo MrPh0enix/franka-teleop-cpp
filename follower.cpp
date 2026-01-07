@@ -41,7 +41,7 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; //default to leader
-std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset; Received from leader
+std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset, E: End; Received from leader
 
 
 
@@ -79,7 +79,7 @@ void pubThread (const YAML::Node& config) {
             gripperWidth = shared_gripper_width;
         }
 
-        follower_state.setTime(123456);
+        follower_state.setTime(state_to_publish.time.toMSec());
         follower_state.setJoint1Pos(state_to_publish.q[0]);
         follower_state.setJoint2Pos(state_to_publish.q[1]);
         follower_state.setJoint3Pos(state_to_publish.q[2]);
@@ -264,7 +264,7 @@ void setGripperWidth(const YAML::Node& config) {
 
         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
             gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-        } else if (leader_gripper_width >= 0.04) {
+        } else if (leader_gripper_width >= config["gripper"]["grip_threshold"].as<double>() - 0.01) {
             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
         }
         
@@ -310,7 +310,7 @@ int main () {
         // move robot to start
         // const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816 + 1.57};
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.0};
-        MotionGenerator motion_generator_home(0.5, home_pos);
+        MotionGenerator motion_generator_home(0.45, home_pos);
         robot.control(motion_generator_home);
 
         // start sub thread
@@ -497,7 +497,10 @@ int main () {
             try {
                 char m = mode.load();
                 std::cout << m << std::endl;
-                if (m == 'T' || m == 'R') {
+                if (m == 'E') {
+                    std::cout << "Experiment finished !!!!" << std::endl;
+                    running.store(false);
+                } else if (m == 'T' || m == 'R') {
                     //execute control loop
                     robot.control(trq_control_callback);
                 } else if (m == 'O') {
@@ -527,6 +530,7 @@ int main () {
         running.store(false);
         sub_thread.join();
         pub_thread.join();
+        gripper_thread.join();
         // key_thread.join();
 
 

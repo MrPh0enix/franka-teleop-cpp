@@ -140,6 +140,7 @@ void pubThread (const YAML::Node& config) {
         leader_state.setEndEffPoseVal16(state_to_publish.O_T_EE[15]);
         leader_state.setGripperWidth(gripperWidth);
         leader_state.setFollowerEEOffset(offset_deg.load());
+        leader_state.setRobotMode(static_cast<uint8_t>(mode.load()));
         leader_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
         
 
@@ -391,13 +392,6 @@ int main (int argc, char* argv[]) {
         }
 
         setNextIter(); //set initial rec params
-        
-        // std::filesystem::path recordings_dir = "recordings";
-        // int count = 0;
-        // for (const auto& entry : std::filesystem::directory_iterator(recordings_dir)) {
-        //     count++;
-        // }
-        // trial_num.store(++count);
         
 
         // Define PGain and DGain and velo_limits

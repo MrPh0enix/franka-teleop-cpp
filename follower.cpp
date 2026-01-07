@@ -41,6 +41,7 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; //default to leader
+std::atomic<char> mode{'T'}; // current mode of operation; T: Start, R: Record, O: Reset; Received from leader
 
 
 
@@ -125,6 +126,7 @@ void pubThread (const YAML::Node& config) {
         follower_state.setEndEffPoseVal16(state_to_publish.O_T_EE[15]);
         follower_state.setGripperWidth(gripperWidth);
         follower_state.setFollowerEEOffset(0);
+        follower_state.setRobotMode(0);
         follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
     
         kj::VectorOutputStream state_message;
@@ -190,6 +192,9 @@ void subThread (const YAML::Node& config) {
 
         //set the current control robot
         control_rob.store(static_cast<char>(leader_state.getControlRobot()));
+
+        //update current mode
+        mode.store(static_cast<char>(leader_state.getRobotMode()));
 
         std::this_thread::sleep_for(std::chrono::milliseconds(1000/sub_freq));
 
@@ -304,9 +309,9 @@ int main () {
 
         // move robot to start
         // const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816 + 1.57};
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.0 + 1.57};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.0};
+        MotionGenerator motion_generator_home(0.5, home_pos);
+        robot.control(motion_generator_home);
 
         // start sub thread
         std::thread sub_thread(subThread, std::cref(config));
@@ -455,9 +460,9 @@ int main () {
         // control callback function
         auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
             
-            if (!running.load()) {
+            char m = mode.load();
 
-                std::cout << "Exiting .... " << std::endl;
+            if (!running.load() || (m == 'O')) {
                 
                 return franka::MotionFinished(franka::Torques({0, 0, 0, 0, 0, 0, 0}));
                 
@@ -490,9 +495,21 @@ int main () {
         while (running.load()) {
 
             try {
+                char m = mode.load();
+                std::cout << m << std::endl;
+                if (m == 'T' || m == 'R') {
+                    //execute control loop
+                    robot.control(trq_control_callback);
+                } else if (m == 'O') {
+                    //reset to home
+                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                    robot.control(motion_generator_home);
+                    mode.store('T');
+                    
+                }
 
-                //execute control loop
-                robot.control(trq_control_callback);
+                // //execute control loop
+                // robot.control(trq_control_callback);
 
             } catch (const franka::Exception& ex) {
 

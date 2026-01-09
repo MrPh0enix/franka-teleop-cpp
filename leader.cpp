@@ -569,6 +569,7 @@ int main () {
 
 
             std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             return command_torques;
 

@@ -296,7 +296,7 @@ void setGripperWidth(const YAML::Node& config) {
 
         if ((mode.load() != 'O') && (gripperWidth < grip_threshold)) {
             mode.store('O');
-            std::this_thread::sleep_for(std::chrono::seconds(5));
+            std::this_thread::sleep_for(std::chrono::seconds(2));
             gripper.move(0.08, config["gripper"]["speed"].as<double>());
         }
             
@@ -563,7 +563,7 @@ int main (int argc, char* argv[]) {
                     robot.control(trq_control_callback);
                 } else if (m == 'O') {
                     //reset to home
-                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
                     robot.control(motion_generator_home);
                     mode.store('T');
                     setNextIter(); //set the next recording params

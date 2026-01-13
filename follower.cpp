@@ -263,8 +263,8 @@ void setGripperWidth(const YAML::Node& config) {
         double leader_gripper_width = leader_state.getGripperWidth();
 
         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-        } else if (leader_gripper_width >= config["gripper"]["grip_threshold"].as<double>() - 0.01) {
+            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>(), 0.005, 0.005);
+        } else if (leader_gripper_width >= config["gripper"]["grip_threshold"].as<double>()) {
             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
         }
         
@@ -505,7 +505,7 @@ int main () {
                     robot.control(trq_control_callback);
                 } else if (m == 'O') {
                     //reset to home
-                    std::this_thread::sleep_for(std::chrono::seconds(10));
+                    std::this_thread::sleep_for(std::chrono::seconds(5));
                     robot.control(motion_generator_home);
                     mode.store('T');
                     

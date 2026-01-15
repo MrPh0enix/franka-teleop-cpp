@@ -41,3 +41,13 @@ make
    ```bash
    ./follower
    ```
+2. The program will automatically stop once the experiment has run its course. Run Ctrl+C on both the terminals to ensure they have exited correctly.
+
+## Things to note
+
+- Recordings will be stored in a **recordings** folder created automatically, with naming conventions taken from the lookup file.
+- In case a iteration goes wrong, stop both the programs, delete the corrupted recording and restart. It will pick up from where it left off.
+- Ask participants to refrain from touching the physical buttons on the robot as this will stop the program. In that case, follow the above instruction and restart.
+- If the emergency stop has been pressed, follow the same process to restart.
+- The `teleop_config.yml` file controls the parameters of the teleoperation setup.
+

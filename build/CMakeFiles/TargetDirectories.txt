@@ -1,4 +1,0 @@
-/home/johnkiran/franka-teleop-cpp/build/CMakeFiles/rebuild_cache.dir
-/home/johnkiran/franka-teleop-cpp/build/CMakeFiles/edit_cache.dir
-/home/johnkiran/franka-teleop-cpp/build/CMakeFiles/leader.dir
-/home/johnkiran/franka-teleop-cpp/build/CMakeFiles/follower.dir

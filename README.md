@@ -8,7 +8,7 @@ This repository contains a modified teleoperation framework for a dual-Franka gr
 
 1. Make sure **both Franka robots** and their **control PCs** are powered on.
 2. Open a web browser (preferably **Google Chrome**).
-3. Connect to the Franka Control Interfaces:
+3. Connect to the Franka Desks:
    - `http://172.22.2.3/desk`
    - `http://172.22.2.4/desk`
 4. Unlock the brakes on both robot arms.
@@ -30,7 +30,7 @@ cmake ..
 make
 ```
 
-### After compiling, run the leader and follower program
+## After compiling, run the leader and follower program
 
 1. In the build folder in two separate terminals, run:
    ```bash

@@ -48,6 +48,8 @@ std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
 
+class LowPassFilter:
+    def __init
 
 
 void pubThread (const YAML::Node& config) {
@@ -531,6 +533,59 @@ int main () {
 
         };
 
+
+        auto computeBilateralWithDOB = [&](const franka::RobotState& robot_state) {
+            
+            // initialize torques and acclerations
+            std::array<double, 7> torques;
+            torques.fill(0.0);
+            std::array<double, 7> acc;
+            acc.fill(0.0);
+
+            if (!sub_connected.load()) {
+                return torques;
+            };
+
+            RobotState::Reader follower_state;
+
+            {
+                std::lock_guard<std::mutex> lock(state_mutex);
+                follower_state = shared_follower_state;
+            }
+
+            std::array<double, 7> follower_pos = {
+                follower_state.getJoint1Pos(),
+                follower_state.getJoint2Pos(),
+                follower_state.getJoint3Pos(),
+                follower_state.getJoint4Pos(),
+                follower_state.getJoint5Pos(),
+                follower_state.getJoint6Pos(),
+                follower_state.getJoint7Pos()
+            };
+
+            std::array<double, 7> follower_vel = {
+                follower_state.getJoint1Vel(),
+                follower_state.getJoint2Vel(),
+                follower_state.getJoint3Vel(),
+                follower_state.getJoint4Vel(),
+                follower_state.getJoint5Vel(),
+                follower_state.getJoint6Vel(),
+                follower_state.getJoint7Vel()
+            };
+
+
+            //estimate disturbance trq (DOB)
+            std::array<double, 7> trq_dob;
+            trq_dob.fill(0.0);
+
+            // low pass filter implementation
+            auto lowPassFilter = [&](std::string type = "reverse_euler") {
+
+            };
+
+
+
+        };
 
 
 

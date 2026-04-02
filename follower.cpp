@@ -356,17 +356,14 @@ int main () {
 
             // Compute torques
             for (int i = 0; i < 7; ++i) {
-                double vel = joint_vel[i];
 
-                if (i == 6) {
-                    double pos_error = target_pos[i] - joint_pos[i];
-                    torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-                } else {
-                    double pos_error = target_pos[i] - joint_pos[i];
-                    torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-                }
+                double vel = joint_vel[i];
+                double pos_error = target_pos[i] - joint_pos[i];
+                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
                 
             };
+
+            
 
             return torques;
 
@@ -608,10 +605,12 @@ int main () {
             //write to file
             file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
 
-            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
-            return command_torques;
+            std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
+
+            return tau_cmd_rate_limited;
 
         };
 

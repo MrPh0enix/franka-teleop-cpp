@@ -12,10 +12,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 find_package(CapnProto REQUIRED)
-find_package(Franka REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
+
+# for libfranka 0.9.2
+# find_package(Franka REQUIRED)
+
+# use libfarnka 0.18.0
+set(FRANKA_ROOT /home/johnkiran/libfranka/build)
+find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
 
 
 # generate capnp files

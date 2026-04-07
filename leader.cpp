@@ -32,7 +32,7 @@
 #include "examples_common.h"
 
 
-#include <franka/lowpass_filter.h>
+#include <low_pass_filters.h>
 
 using namespace std;
 
@@ -48,8 +48,8 @@ std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
 
-class LowPassFilter:
-    def __init
+// class LowPassFilter:
+//     def __init
 
 
 void pubThread (const YAML::Node& config) {

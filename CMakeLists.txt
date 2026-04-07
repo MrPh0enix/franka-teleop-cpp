@@ -17,11 +17,11 @@ find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 
 # for libfranka 0.9.2
-# find_package(Franka REQUIRED)
+find_package(Franka REQUIRED)
 
 # use libfarnka 0.18.0
-set(FRANKA_ROOT /home/johnkiran/libfranka/build)
-find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
+# set(FRANKA_ROOT /home/johnkiran/libfranka/build)
+# find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
 
 
 # generate capnp files
@@ -29,7 +29,7 @@ capnp_generate_cpp(CAPNP_SRCS CAPNP_HDRS messages/robot-state.capnp)
 # Add the directory containing .capnp.h to the include path
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # include franka examples directory
-include_directories(${CMAKE_SOURCE_DIR}/franka_examples)
+include_directories(${CMAKE_SOURCE_DIR}/utils)
 # include Eigen3
 include_directories(${EIGEN3_INCLUDE_DIR})
 
@@ -41,14 +41,28 @@ configure_file(
 )
 
 
+# compile the utils library
+add_library(utils
+    utils/examples_common.cpp
+    utils/low_pass_filters.cpp
+)
+target_include_directories(utils PUBLIC
+    ${CMAKE_SOURCE_DIR}/utils
+)
+target_link_libraries(utils
+    Franka::Franka
+)
+
+
+# compile the executables
 add_executable(follower
             follower.cpp
-            franka_examples/examples_common.cpp
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
 
 # Link libraries
 target_link_libraries(follower
+    utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj
@@ -58,12 +72,12 @@ target_link_libraries(follower
 
 add_executable(leader 
             leader.cpp
-            franka_examples/examples_common.cpp
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
 
 # Link libraries
 target_link_libraries(leader
+    utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj

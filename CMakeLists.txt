@@ -44,7 +44,7 @@ configure_file(
 # compile the utils library
 add_library(utils
     utils/examples_common.cpp
-    utils/low_pass_filters.cpp
+    utils/VelocityObserver.cpp
 )
 target_include_directories(utils PUBLIC
     ${CMAKE_SOURCE_DIR}/utils

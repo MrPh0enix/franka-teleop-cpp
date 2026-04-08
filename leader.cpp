@@ -32,7 +32,7 @@
 #include "examples_common.h"
 
 
-#include <low_pass_filters.h>
+#include <VelocityObserver.h>
 
 using namespace std;
 
@@ -48,8 +48,32 @@ std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
 
-// class LowPassFilter:
-//     def __init
+// velocity estimators for each joint
+std::array<VelocityObserver, 7> leader_vel_estimators = {
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
+};
+std::array<VelocityObserver, 7> follower_vel_estimators = {
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
+};
+
+
+// to store previous time step torques for DOB
+std::array<double, 7> tau_in_prev;
+
+
+
 
 
 void pubThread (const YAML::Node& config) {
@@ -493,12 +517,11 @@ int main () {
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
-
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            // Compute accelerations
+            // Compute accelerationsext_trq
             for (int i = 0; i < 7; ++i) {
                 double pos_error = joint_pos[i] - follower_pos[i];
                 double vel_error = joint_vel[i] - follower_vel[i];
@@ -534,8 +557,12 @@ int main () {
         };
 
 
+        
+
+
+
         auto computeBilateralWithDOB = [&](const franka::RobotState& robot_state) {
-            
+
             // initialize torques and acclerations
             std::array<double, 7> torques;
             torques.fill(0.0);
@@ -543,9 +570,12 @@ int main () {
             acc.fill(0.0);
 
             if (!sub_connected.load()) {
+
                 return torques;
+        
             };
 
+            // get follower states
             RobotState::Reader follower_state;
 
             {
@@ -573,19 +603,110 @@ int main () {
                 follower_state.getJoint7Vel()
             };
 
+            std::array<double, 7> follower_ext_trq = {
+                follower_state.getJoint1ExtTorque(),
+                follower_state.getJoint2ExtTorque(),
+                follower_state.getJoint3ExtTorque(),
+                follower_state.getJoint4ExtTorque(),
+                follower_state.getJoint5ExtTorque(),
+                follower_state.getJoint6ExtTorque(),
+                follower_state.getJoint7ExtTorque()
+            };
 
-            //estimate disturbance trq (DOB)
-            std::array<double, 7> trq_dob;
-            trq_dob.fill(0.0);
-
-            // low pass filter implementation
-            auto lowPassFilter = [&](std::string type = "reverse_euler") {
-
+            std::array<double, 7> follower_trq = {
+                follower_state.getJoint1Torque(),
+                follower_state.getJoint2Torque(),
+                follower_state.getJoint3Torque(),
+                follower_state.getJoint4Torque(),
+                follower_state.getJoint5Torque(),
+                follower_state.getJoint6Torque(),
+                follower_state.getJoint7Torque()
             };
 
 
 
+            // get leader states
+            std::array<double, 7> joint_pos = robot_state.q;
+            std::array<double, 7> joint_vel = robot_state.dq;
+            std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+
+
+            // moment of inertia matrix
+            std::array<double, 49> MOI = model.mass(robot_state);
+
+            // nominal inertia for DOB
+            std::array<double, 7> a_n;
+            for (int i = 0; i < 7; i++) {
+                a_n[i] = MOI[i*7 + i];
+            }
+
+
+            // velocity estimation (using vel observer)
+            std::array<double, 7> leader_vel_est;
+            std::array<double, 7> follower_vel_est;
+
+            for (int i = 0; i < 7; i++) {
+                leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
+                // estimate follower vel from position as its state is sent through a connection
+                follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]); 
+            }
+
+
+            // Compute desired accelerations
+            for (int i = 0; i < 7; ++i) {
+                double pos_error = joint_pos[i] - follower_pos[i];
+                double vel_error = leader_vel_est[i] - follower_vel_est[i];
+                double vel_tot = leader_vel_est[i] + follower_vel_est[i];
+                double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
+                // if ((i == 0) || (i == 1) || (i == 2))  {
+                //     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                //            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                // }
+                acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                
+            }
+            // Compute torques
+            for (int i = 0; i < 7; i++) {
+                for (int j = 0; j < 7; j++) {
+                    torques[i] += MOI[i*7 + j] * acc[j] ;
+                }
+            }
+
+
+            // persistent variable for DOB
+            static std::array<double, 7> lpf_output_prev;
+            static std::array<double, 7> lpf_input_prev;
+            static std::array<double, 7> tau_in_prev;
+
+            // DOB params
+            constexpr double T = 0.001;
+            constexpr double g_dob = 1000.0;
+
+
+            // Disturbance Observer
+            for (int i = 0; i < 7; i++) {
+
+                double omega = joint_vel[i];
+                double lpf_input = tau_in_prev[i] + a_n[i] * g_dob * omega;
+                
+                // Al-Alaoui low pass filter
+                double lpf_output = (1.0 / (7.0*g_dob*T + 8.0)) * ((8.0 - g_dob*T)*lpf_output_prev[i] + 7.0*g_dob*T*lpf_input + g_dob*T*lpf_input_prev[i]);
+
+                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+
+                torques[i] += tau_dis_hat;
+
+                lpf_output_prev[i] = lpf_output;
+                lpf_input_prev[i]  = lpf_input;
+
+            }
+
+
+            return torques;
+
         };
+
 
 
 
@@ -625,8 +746,11 @@ int main () {
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            // std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
+
+            tau_in_prev = tau_cmd_rate_limited;
 
             return tau_cmd_rate_limited;
 

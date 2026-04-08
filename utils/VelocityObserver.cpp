@@ -1,13 +1,13 @@
 
-#include "low_pass_filters.h"
+#include "VelocityObserver.h"
 
 
-low_pass_filter::low_pass_filter(double g, double T, Method method)
+VelocityObserver::VelocityObserver(double g, double T, Method method)
     : g_(g), T_(T), method_(method), Y_k_prev_(0.0), U_k_prev_(0.0), initialised_(false)
 {}
 
 
-double low_pass_filter::update(double U_k) {
+double VelocityObserver::update(double U_k) {
 
     if (!initialised_) {
         initialised_ = true;
@@ -37,7 +37,7 @@ double low_pass_filter::update(double U_k) {
 }
 
 
-void low_pass_filter::reset() {
+void VelocityObserver::reset() {
     Y_k_prev_ = 0.0;
     U_k_prev_ = 0.0;
     initialised_ = false;

@@ -1,6 +1,6 @@
 #pragma once
 
-class low_pass_filter {
+class VelocityObserver {
     public:
 
         enum class Method {
@@ -9,7 +9,7 @@ class low_pass_filter {
             ADAMS
         };
 
-        low_pass_filter(double g, double T, Method method = Method::ALALOUI);
+        VelocityObserver(double g, double T, Method method = Method::ALALOUI);
 
         double update(double U_k);
         void reset();

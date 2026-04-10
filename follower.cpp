@@ -686,7 +686,8 @@ int main () {
             for (int i = 0; i < 7; i++) {
                 follower_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
                 // estimate leader vel from position as its state is sent through a connection
-                leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]); 
+                // leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]); 
+                leader_vel_est[i] = leader_pos[i]; 
             }
 
 
@@ -718,26 +719,26 @@ int main () {
 
             // DOB params
             constexpr double T = 0.001;
-            constexpr double g_dob = 1000.0;
+            constexpr double g_dob = 500.0;
 
 
-            // Disturbance Observer
-            for (int i = 0; i < 7; i++) {
+            // // Disturbance Observer
+            // for (int i = 0; i < 7; i++) {
 
-                double omega = joint_vel[i];
-                double lpf_input = tau_in_prev[i] + a_n[i] * g_dob * omega;
+            //     double omega = joint_vel[i];
+            //     double lpf_input = tau_in_prev[i] + a_n[i] * g_dob * omega;
                 
-                // Al-Alaoui low pass filter
-                double lpf_output = (1.0 / (7.0*g_dob*T + 8.0)) * ((8.0 - g_dob*T)*lpf_output_prev[i] + 7.0*g_dob*T*lpf_input + g_dob*T*lpf_input_prev[i]);
+            //     // Al-Alaoui low pass filter
+            //     double lpf_output = (1.0 / (7.0*g_dob*T + 8.0)) * ((8.0 - g_dob*T)*lpf_output_prev[i] + 7.0*g_dob*T*lpf_input + g_dob*T*lpf_input_prev[i]);
 
-                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-                torques[i] += tau_dis_hat;
+            //     torques[i] += tau_dis_hat;
 
-                lpf_output_prev[i] = lpf_output;
-                lpf_input_prev[i]  = lpf_input;
+            //     lpf_output_prev[i] = lpf_output;
+            //     lpf_input_prev[i]  = lpf_input;
 
-            }
+            // }
 
 
             return torques;
@@ -777,8 +778,8 @@ int main () {
             file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
-            // std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
+            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 

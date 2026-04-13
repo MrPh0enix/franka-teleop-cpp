@@ -299,6 +299,11 @@ int main () {
         std::vector<double> C_y = config["global"]["C_y"].as<std::vector<double>>();
         std::vector<double> C_f = config["global"]["C_f"].as<std::vector<double>>();
         std::vector<double> vel_coeff = config["global"]["vel_coeff"].as<std::vector<double>>();
+
+        // disturbance observer constants
+        double g_dob = config["disturbance_observer"]["g"].as<double>();
+        double T_dob = config["disturbance_observer"]["T"].as<double>();
+
         
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
@@ -644,12 +649,11 @@ int main () {
             // velocity estimation (using vel observer)
             std::array<double, 7> leader_vel_est;
             std::array<double, 7> follower_vel_est;
-
             for (int i = 0; i < 7; i++) {
                 leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
                 // estimate follower vel from position as its state is sent through a connection
                 // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]); 
-                follower_vel_est[i] = follower_pos[i]; 
+                follower_vel_est[i] = follower_vel[i];
             }
 
 
@@ -686,19 +690,17 @@ int main () {
             static std::array<double, 7> lpf_output_prev;
             static std::array<double, 7> lpf_input_prev;
 
-            // DOB params
-            constexpr double T = 0.001;
-            constexpr double g_dob = 500.0;
-
 
             // // Disturbance Observer
             // for (int i = 0; i < 7; i++) {
 
             //     double omega = joint_vel[i];
-            //     double lpf_input = tau_in_prev[i] + a_n[i] * g_dob * omega;
+            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
             //     // Al-Alaoui low pass filter
-            //     double lpf_output = (1.0 / (7.0*g_dob*T + 8.0)) * ((8.0 - g_dob*T)*lpf_output_prev[i] + 7.0*g_dob*T*lpf_input + g_dob*T*lpf_input_prev[i]);
+            //     double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+            //     // // backward Euler
+            //     // double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*lpf_input - g_dob*lpf_input_prev[i]);
 
             //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 

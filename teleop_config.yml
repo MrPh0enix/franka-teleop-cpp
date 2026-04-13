@@ -18,7 +18,8 @@ global:
 
 
 disturbance_observer:
-  g: 
+  g: 500.0
+  T: 0.001
 
 
 leader:

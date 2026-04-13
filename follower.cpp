@@ -713,6 +713,13 @@ int main () {
             }
 
 
+            //negating effects of gravity compensation
+            // std::array<double, 7> gravity = model.gravity(robot_state);
+            // for (int i = 0; i < 7; i++) {
+            //     torques[i] -= gravity[i] ;
+            // }
+
+
             // persistent variable for DOB
             static std::array<double, 7> lpf_output_prev;
             static std::array<double, 7> lpf_input_prev;

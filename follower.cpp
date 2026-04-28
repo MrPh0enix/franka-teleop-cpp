@@ -676,26 +676,32 @@ int main () {
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
+
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6, 7};
+
             // nominal inertia for DOB
             std::array<double, 7> a_n;
-            for (int i = 0; i < 7; i++) {
+            a_n.fill(0.0);
+            for (int i : active_joints) {
                 a_n[i] = MOI[i*7 + i];
             }
 
 
             // velocity estimation (using vel observer)
             std::array<double, 7> leader_vel_est;
+            leader_vel_est.fill(0.0);
             std::array<double, 7> follower_vel_est;
-            for (int i = 0; i < 7; i++) {
+            follower_vel_est.fill(0.0);
+            for (int i : active_joints) {
                 follower_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
                 // estimate leader vel from position as its state is sent through a connection
-                // leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]); 
+                // leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]);
                 leader_vel_est[i] = leader_vel[i];
             }
 
 
             // Compute desired accelerations
-            for (int i = 0; i < 7; ++i) {
+            for (int i : active_joints) {
                 double pos_error = joint_pos[i] - leader_pos[i];
                 double vel_error = follower_vel_est[i] - leader_vel_est[i];
                 double vel_tot = follower_vel_est[i] + leader_vel_est[i];
@@ -709,7 +715,7 @@ int main () {
                 
             }
             // Compute torques
-            for (int i = 0; i < 7; i++) {
+            for (int i : active_joints) {
                 for (int j = 0; j < 7; j++) {
                     torques[i] += MOI[i*7 + j] * acc[j] ;
                 }
@@ -717,10 +723,10 @@ int main () {
 
 
             //negating effects of gravity compensation
-            // std::array<double, 7> gravity = model.gravity(robot_state);
-            // for (int i = 0; i < 7; i++) {
-            //     torques[i] -= gravity[i] ;
-            // }
+            std::array<double, 7> gravity = model.gravity(robot_state);
+            for (int i : active_joints) {
+                torques[i] -= gravity[i] ;
+            }
 
 
             // persistent variable for DOB
@@ -728,25 +734,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // // Disturbance Observer
-            // for (int i = 0; i < 7; i++) {
+            // Disturbance Observer
+            for (int i : active_joints) {
 
-            //     double omega = joint_vel[i];
-            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+                double omega = joint_vel[i];
+                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-            //     // Al-Alaoui low pass filter
-            //     double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-            //     // // backward Euler
-            //     // double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*lpf_input - g_dob*lpf_input_prev[i]);
+                // // Al-Alaoui low pass filter
+                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+                // backward Euler
+                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
                 
-            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-            //     torques[i] += tau_dis_hat;
+                torques[i] += tau_dis_hat;
 
-            //     lpf_output_prev[i] = lpf_output;
-            //     lpf_input_prev[i]  = lpf_input;
+                lpf_output_prev[i] = lpf_output;
+                lpf_input_prev[i]  = lpf_input;
 
-            // }
+            }
 
 
             return torques;

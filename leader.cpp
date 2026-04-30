@@ -532,12 +532,12 @@ int main () {
                 double vel_error = joint_vel[i] - follower_vel[i];
                 double vel_tot = joint_vel[i] + follower_vel[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                // if ((i == 0) || (i == 1) || (i == 2))  {
-                //     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                //            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                // }
-                acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                if (i == 1)  {
+                    acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                           - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                }
+                // acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                //             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 
             }
             
@@ -663,7 +663,7 @@ int main () {
                 double vel_error = leader_vel_est[i] - follower_vel_est[i];
                 double vel_tot = leader_vel_est[i] + follower_vel_est[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                // if ((i == 0) || (i == 1) || (i == 2))  {
+                // if (i == 1)  {
                 //     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                 //            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 // }
@@ -675,15 +675,18 @@ int main () {
             for (int i = 0; i < 7; i++) {
                 for (int j = 0; j < 7; j++) {
                     torques[i] += MOI[i*7 + j] * acc[j] ;
+                    
                 }
             }
 
 
             //negating effects of gravity compensation
-            // std::array<double, 7> gravity = model.gravity(robot_state);
-            // for (int i = 0; i < 7; i++) {
-            //     torques[i] -= gravity[i] ;
-            // }
+            std::array<double, 7> gravity = model.gravity(robot_state);
+            for (int i = 0; i < 7; i++) {
+                
+                torques[i] -= gravity[i] ;
+                
+            }
 
 
             // persistent variables for DOB
@@ -691,25 +694,26 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // // Disturbance Observer
-            // for (int i = 0; i < 7; i++) {
+            // Disturbance Observer
+            for (int i = 0; i < 7; i++) {
 
-            //     double omega = joint_vel[i];
-            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-            //     // Al-Alaoui low pass filter
-            //     double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-            //     // // backward Euler
-            //     // double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*lpf_input - g_dob*lpf_input_prev[i]);
+                    double omega = joint_vel[i];
+                    double lpf_input = tau_in_prev[i] + a_n[i] * g_dob * omega;
+                    
+                    // // Al-Alaoui low pass filter
+                    // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+                    // backward Euler
+                    double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*lpf_input - g_dob*lpf_input_prev[i]);
 
-            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+                    double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-            //     torques[i] += tau_dis_hat;
+                    torques[i] += tau_dis_hat;
 
-            //     lpf_output_prev[i] = lpf_output;
-            //     lpf_input_prev[i]  = lpf_input;
-
-            // }
+                    lpf_output_prev[i] = lpf_output;
+                    lpf_input_prev[i]  = lpf_input;
+                
+            }
 
 
             return torques;

@@ -16,7 +16,7 @@ find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
 
-# # for libfranka 0.9.2
+# # for libfranka auto
 # find_package(Franka REQUIRED)
 
 # use libfarnka 0.9.2

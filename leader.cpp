@@ -284,7 +284,7 @@ int main () {
 
 
         // config
-        YAML::Node config = YAML::LoadFile("teleop_config.yml");
+        YAML::Node config = YAML::LoadFile("../teleop_config.yml");
 
         // Define PGain and DGain and velo_limits
         std::vector<double> P_gain = config["leader"]["p_vals"].as<std::vector<double>>();
@@ -639,12 +639,15 @@ int main () {
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6, 7};
+            //coriolis
+            std::array<double, 7> coriolis = model.coriolis(robot_state);
+
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
             a_n.fill(0.0);
-            for (int i : active_joints) {
+            for (int i = 0; i < 7; ++i) {
                 a_n[i] = MOI[i*7 + i];
             }
 
@@ -654,7 +657,7 @@ int main () {
             leader_vel_est.fill(0.0);
             std::array<double, 7> follower_vel_est;
             follower_vel_est.fill(0.0);
-            for (int i : active_joints) {
+            for (int i = 0; i < 7; ++i) {
                 leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
                 // estimate follower vel from position as its state is sent through a connection
                 // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]); 
@@ -663,33 +666,35 @@ int main () {
 
 
             // Compute desired accelerations
-            for (int i : active_joints) {
+            for (int i: active_joints) {
                 double pos_error = joint_pos[i] - follower_pos[i];
                 double vel_error = leader_vel_est[i] - follower_vel_est[i];
                 double vel_tot = leader_vel_est[i] + follower_vel_est[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                // if (i == 1)  {
-                //     acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                //            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                // }
                 acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                
+    
             }
+
+            // // Compute torques
+            // for (int i : active_joints) {
+            //     for (int j = 0; j < 7; j++) {
+            //         torques[i] += MOI[i*7 + j] * acc[j] ;
+            //     }
+            // }
+
             // Compute torques
             for (int i : active_joints) {
-                for (int j = 0; j < 7; j++) {
-                    torques[i] += MOI[i*7 + j] * acc[j] ;
-                    
-                }
+                torques[i] += MOI[i*7 + i] * acc[i];
             }
+            
 
 
-            // negating effects of gravity compensation
-            std::array<double, 7> gravity = model.gravity(robot_state);
-            for (int i : active_joints) {
-                torques[i] -= gravity[i] ;
-            }
+            // // negating effects of gravity compensation
+            // std::array<double, 7> gravity = model.gravity(robot_state);
+            // for (int i : active_joints) {
+            //     torques[i] -= gravity[i] ;
+            // }
 
 
             // persistent variables for DOB
@@ -716,6 +721,23 @@ int main () {
                 lpf_input_prev[i]  = lpf_input;
 
             }
+
+            // for (int i : active_joints) {
+
+            //     double tau_model = a_n[i] * acc[i];   // expected torque
+            //     double tau_error = torques[i] - tau_model;
+
+            //     // LPF (backward Euler)
+            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) *
+            //                         (lpf_output_prev[i] + g_dob*T_dob * tau_error);
+
+            //     double tau_dis_hat = lpf_output;
+
+            //     // subtract disturbance
+            //     torques[i] -= tau_dis_hat;
+
+            //     lpf_output_prev[i] = lpf_output;
+            // }
 
 
             return torques;
@@ -756,7 +778,7 @@ int main () {
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
 
-            
+            // std::cout << "Cmd success rate: " << robot_state.control_command_success_rate << std::endl;
 
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
@@ -779,7 +801,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback);
+                robot.control(trq_control_callback, false, 1000.0);
 
             } catch (const franka::Exception& ex) {
 

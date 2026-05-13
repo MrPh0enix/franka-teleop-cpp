@@ -15,7 +15,7 @@ global:
 
 leader:
   ip: "127.0.0.1"
-  robot: "172.22.2.30" #zaphod
+  robot: "172.22.2.3" #zaphod
   port: 49185
   p_vals: [750.0, 600.0, 600.0, 600.0, 70.0, 100.0, 50.0]
   d_vals: [30.0, 50.0, 50.0, 50.0, 12.0, 20.0, 10.0]
@@ -23,14 +23,14 @@ leader:
 
 follower:
   ip: "127.0.0.1"
-  robot: "172.22.2.29" #marvin
+  robot: "172.22.2.4" #marvin
   port: 49186
   p_vals: [750.0, 600.0, 600.0, 600.0, 70.0, 100.0, 50.0]
   d_vals: [30.0, 50.0, 50.0, 50.0, 12.0, 20.0, 10.0]
 
 
 gripper:
-  object_width: 0.0454
-  gripping_force: 1
+  object_width: 0.050
+  gripping_force: 3
   speed: 0.1
-  grip_threshold: 0.05
+  grip_threshold: 0.06

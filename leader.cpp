@@ -568,8 +568,8 @@ int main () {
             
 
 
-            // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
+            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 

@@ -241,11 +241,18 @@ void setGripperWidth(const YAML::Node& config) {
 
         double leader_gripper_width = leader_state.getGripperWidth();
 
+        // if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
+        //     gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
+        // } else if (leader_gripper_width >= 0.04) {
+        //     gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
+        // }
+
         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-        } else if (leader_gripper_width >= 0.04) {
+            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>(), 0.02, 0.02);
+        } else if (leader_gripper_width >= config["gripper"]["grip_threshold"].as<double>()) {
             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
         }
+        
         
     }
 
@@ -606,7 +613,7 @@ int main () {
             file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
 
             std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            //std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 

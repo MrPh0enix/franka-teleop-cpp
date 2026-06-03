@@ -258,7 +258,7 @@ int main () {
 
 
         // config
-        YAML::Node config = YAML::LoadFile("teleop_config.yml");
+        YAML::Node config = YAML::LoadFile("../teleop_config.yml");
 
         // Define PGain and DGain and velo_limits
         std::vector<double> P_gain = config["leader"]["p_vals"].as<std::vector<double>>();

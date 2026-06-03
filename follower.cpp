@@ -67,9 +67,6 @@ std::array<VelocityObserver, 7> follower_vel_estimators = {
     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
 };
 
-// to store previous time step torques for DOB
-std::array<double, 7> tau_in_prev;
-
 
 
 void pubThread (const YAML::Node& config) {
@@ -105,20 +102,20 @@ void pubThread (const YAML::Node& config) {
         }
 
         follower_state.setTime(123456);
-        follower_state.setJoint1Pos(state_to_publish.q[0]);
-        follower_state.setJoint2Pos(state_to_publish.q[1]);
-        follower_state.setJoint3Pos(state_to_publish.q[2]);
-        follower_state.setJoint4Pos(state_to_publish.q[3]);
-        follower_state.setJoint5Pos(state_to_publish.q[4]);
-        follower_state.setJoint6Pos(state_to_publish.q[5]);
-        follower_state.setJoint7Pos(state_to_publish.q[6]);
-        follower_state.setJoint1Vel(state_to_publish.dq[0]);
-        follower_state.setJoint2Vel(state_to_publish.dq[1]);
-        follower_state.setJoint3Vel(state_to_publish.dq[2]);
-        follower_state.setJoint4Vel(state_to_publish.dq[3]);
-        follower_state.setJoint5Vel(state_to_publish.dq[4]);
-        follower_state.setJoint6Vel(state_to_publish.dq[5]);
-        follower_state.setJoint7Vel(state_to_publish.dq[6]);
+        follower_state.setJoint1Pos(state_to_publish.theta[0]);
+        follower_state.setJoint2Pos(state_to_publish.theta[1]);
+        follower_state.setJoint3Pos(state_to_publish.theta[2]);
+        follower_state.setJoint4Pos(state_to_publish.theta[3]);
+        follower_state.setJoint5Pos(state_to_publish.theta[4]);
+        follower_state.setJoint6Pos(state_to_publish.theta[5]);
+        follower_state.setJoint7Pos(state_to_publish.theta[6]);
+        follower_state.setJoint1Vel(state_to_publish.dtheta[0]);
+        follower_state.setJoint2Vel(state_to_publish.dtheta[1]);
+        follower_state.setJoint3Vel(state_to_publish.dtheta[2]);
+        follower_state.setJoint4Vel(state_to_publish.dtheta[3]);
+        follower_state.setJoint5Vel(state_to_publish.dtheta[4]);
+        follower_state.setJoint6Vel(state_to_publish.dtheta[5]);
+        follower_state.setJoint7Vel(state_to_publish.dtheta[6]);
         follower_state.setJoint1Torque(state_to_publish.tau_J[0]);
         follower_state.setJoint2Torque(state_to_publish.tau_J[1]);
         follower_state.setJoint3Torque(state_to_publish.tau_J[2]);
@@ -338,11 +335,11 @@ int main () {
                                     {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
 
         
-        // std::ofstream file("output_follower.txt", std::ios::app);
-        // if (!file.is_open()) {
-        //     std::cerr << "Failed to open file\n";
-        //     return 1;
-        // }
+        std::ofstream file("output_follower.txt", std::ios::app);
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file\n";
+            return 1;
+        }
 
         
         
@@ -668,9 +665,10 @@ int main () {
 
 
             // get leader states
-            std::array<double, 7> joint_pos = robot_state.q;
-            std::array<double, 7> joint_vel = robot_state.dq;
+            std::array<double, 7> joint_pos = robot_state.theta;
+            std::array<double, 7> joint_vel = robot_state.dtheta;
             std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
+            std::array<double, 7> jnt_trq = robot_state.tau_J;
 
 
             // moment of inertia matrix
@@ -680,7 +678,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = {5, 6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -706,13 +704,21 @@ int main () {
 
             // Compute desired accelerations
             for (int i: active_joints) {
-                double pos_error = joint_pos[i] - leader_pos[i];
-                double vel_error = follower_vel_est[i] - leader_vel_est[i];
+                // separate derivation for testing
+                double pos_error = leader_pos[i] -  joint_pos[i];
+                double vel_error =  leader_vel_est[i] - follower_vel_est[i];
                 double vel_tot = follower_vel_est[i] + leader_vel_est[i];
-                double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-        
-                acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                            - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                double trq_tot = jnt_trq[i] + leader_trq[i];
+                acc[i] = + ((C_q[i] / 2) * (pos_error)) + ((C_v[i] / 2) * (vel_error)) 
+                         - ((C_f[i] / (2 * 1)) * (trq_tot));
+
+                // current derivation
+                // double pos_error = joint_pos[i] -  leader_pos[i];
+                // double vel_error =  follower_vel_est[i] - leader_vel_est[i];
+                // double vel_tot = follower_vel_est[i] + leader_vel_est[i];
+                // double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
+                // acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                //           - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 
             }
 
@@ -724,7 +730,7 @@ int main () {
             //     }
             // }
 
-            // Compute torques
+            // Compute torques with nominal inertia
             for (int i : active_joints) {
                 torques[i] += MOI[i*7 + i] * acc[i];
             }
@@ -762,24 +768,6 @@ int main () {
 
             }
 
-            // for (int i : active_joints) {
-
-            //     double tau_model = a_n[i] * acc[i];   // expected torque
-            //     double tau_error = torques[i] - tau_model;
-
-            //     // LPF (backward Euler)
-            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) *
-            //                         (lpf_output_prev[i] + g_dob*T_dob * tau_error);
-
-            //     double tau_dis_hat = lpf_output;
-
-            //     // subtract disturbance
-            //     torques[i] -= tau_dis_hat;
-
-            //     lpf_output_prev[i] = lpf_output;
-            // }
-
-
             return torques;
 
         };
@@ -812,11 +800,13 @@ int main () {
 
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
+            std::array<double, 7> motor_pos = robot_state.theta;
+            std::array<double, 7> motor_trq = robot_state.tau_J;
 
             // std::cout << "Cmd success rate: " << robot_state.control_command_success_rate << std::endl;
 
             //write to file
-            //file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
+            file << motor_pos[5] << "," << motor_trq[5] << "\n";
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
             // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
@@ -824,9 +814,7 @@ int main () {
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 
-            tau_in_prev = tau_cmd_rate_limited;
-
-            return tau_cmd_rate_limited;
+            return command_torques;
 
         };
 
@@ -838,7 +826,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback, false, 1000.0);
+                robot.control(trq_control_callback, false);
 
             } catch (const franka::Exception& ex) {
 
@@ -858,7 +846,7 @@ int main () {
         pub_thread.join();
         key_thread.join();
 
-        // file.close();
+        file.close();
 
 
     } catch (const std::exception& ex) {

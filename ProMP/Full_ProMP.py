@@ -160,7 +160,7 @@ class ProMp:
 
         weights =  np.random.multivariate_normal(self.mu, self.cov)
         weights = weights .transpose()
-        a =  self.trajectory_from_weights(weights)
+        a = self.trajectory_from_weights(weights)
         b = self.all_phi.dot(self.mu.transpose())
 
         one_dimensional_trajectory = self.all_phi.dot(self.mu.transpose())

@@ -31,6 +31,8 @@
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
 
+#include <pybind11/embed.h>
+
 
 #include <VelocityObserver.h>
 

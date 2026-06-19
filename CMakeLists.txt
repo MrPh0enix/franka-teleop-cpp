@@ -15,13 +15,14 @@ find_package(CapnProto REQUIRED)
 find_package(Eigen3 REQUIRED)
 find_package(yaml-cpp REQUIRED)
 find_package(Eigen3 REQUIRED)
+find_package(pybind11 REQUIRED)
 
-# # for libfranka 0.9.2
-# find_package(Franka REQUIRED)
+# # for libfranka - any version
+find_package(Franka REQUIRED)
 
 # use libfarnka 0.9.2
-set(Franka_DIR "/home/johnkiran/libfranka0.9.2/libfranka/build")
-find_package(Franka REQUIRED)
+# set(Franka_DIR "/home/johnkiran/libfranka0.9.2/libfranka/build")
+# find_package(Franka REQUIRED)
 
 # use libfarnka 0.18.0
 # set(FRANKA_ROOT /home/johnkiran/libfranka/build)
@@ -71,6 +72,7 @@ target_link_libraries(follower
     CapnProto::capnp
     CapnProto::kj
     yaml-cpp
+    pybind11::embed
 )
 
 
@@ -86,4 +88,15 @@ target_link_libraries(leader
     CapnProto::capnp
     CapnProto::kj
     yaml-cpp
+    pybind11::embed
 )
+
+
+add_executable(test
+            test.cpp)
+
+target_link_libraries(test
+    pybind11::embed
+)
+
+

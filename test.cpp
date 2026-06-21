@@ -17,7 +17,7 @@ int main() {
     py::object result = adaptive_pos.attr("get_init_pos")();
     Eigen::Matrix<double, 7, 1> init_pos = result.cast<Eigen::Matrix<double, 7, 1>>();
 
-    std::cout << init_pos.transpose() << std::endl;
+    std::cout << init_pos << std::endl;
     
     return 0;
 }

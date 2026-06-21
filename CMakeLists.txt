@@ -58,6 +58,17 @@ target_link_libraries(utils
     Franka::Franka
 )
 
+add_library(promp_utils
+    ProMP/ProMPWrapper.cpp
+)
+target_include_directories(promp_utils PUBLIC
+    ${CMAKE_SOURCE_DIR}/ProMP
+)
+target_link_libraries(promp_utils
+    PUBLIC
+    pybind11::embed
+)
+
 
 # compile the executables
 add_executable(follower
@@ -68,6 +79,7 @@ add_executable(follower
 # Link libraries
 target_link_libraries(follower
     utils
+    promp_utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj
@@ -78,12 +90,14 @@ target_link_libraries(follower
 
 add_executable(leader 
             leader.cpp
+
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
 
 # Link libraries
 target_link_libraries(leader
     utils
+    promp_utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj

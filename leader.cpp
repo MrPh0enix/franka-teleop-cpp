@@ -33,8 +33,8 @@
 
 #include <pybind11/embed.h>
 
+#include "ProMPWrapper.hpp"
 
-#include <VelocityObserver.h>
 
 using namespace std;
 
@@ -48,31 +48,6 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
-
-
-// velocity estimators for each joint
-std::array<VelocityObserver, 7> leader_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
-std::array<VelocityObserver, 7> follower_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
-
-
-// to store previous time step torques for DOB
-std::array<double, 7> tau_in_prev;
 
 
 
@@ -310,6 +285,11 @@ int main () {
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
 
+        //proMPs
+        ProMPWrapper promp(
+            "../ProMP/STRAIGHT_LINE_DEMOS/"
+        );
+
         //connect to robot and initialize vals
         franka::Robot robot(config["leader"]["robot"].as<std::string>());
         shared_robot_state = robot.readOnce();
@@ -355,6 +335,21 @@ int main () {
             return torques;
 
         };
+
+
+        auto computeUnilateralAdaptiveGuidanceTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
+
+            // initialize trqs
+            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
+
+            auto result = promp.eucledean_dist_pos(joint_pos);
+            auto desired_q = result.desired_joint_positions;
+            auto std_dev = result.current_stdDev;
+
+            return torques;
+
+        };
+
 
 
         auto computeBilateralTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
@@ -657,9 +652,8 @@ int main () {
             std::array<double, 7> follower_vel_est;
             follower_vel_est.fill(0.0);
             for (int i : active_joints) {
-                leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
-                // estimate follower vel from position as its state is sent through a connection
-                // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]); 
+                // we can add velocity observers here if needed
+                leader_vel_est[i] = joint_vel[i];
                 follower_vel_est[i] = follower_vel[i];
             }
 
@@ -762,12 +756,10 @@ int main () {
 
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
-            std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            // std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
-
-            tau_in_prev = tau_cmd_rate_limited;
 
             return tau_cmd_rate_limited;
 

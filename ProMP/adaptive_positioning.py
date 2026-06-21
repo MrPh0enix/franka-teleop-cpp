@@ -146,6 +146,14 @@ def euclidean_dist_pos(real_time_joint_angles):
 def euclidean_dist_pos2(real_time_joint_angles):
 
     corresponding_iterations = []
+    # Fetch the desired trajectory at corresponding iterations
+    desired_joint_positions = meanTraj[corresponding_iterations]
+    current_stdDev = stdTraj[corresponding_iteration]
+    desired_joint_positions = np.squeeze(desired_joint_positions)
+    
+    return desired_joint_positions, current_stdDev, corresponding_iteration
+
+
     
     # for measurement in real_time_joint_angles:
     min_distance = float('inf')  # Initialize the minimum distance to a large value

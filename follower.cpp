@@ -31,9 +31,6 @@
 #include "examples_common.h"
 
 
-#include <VelocityObserver.h>
-
-
 
 #define BUFFER_SIZE 2048
 
@@ -44,31 +41,6 @@ std::mutex state_mutex;
 std::atomic<bool> running{true};
 std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; //default to leader
-
-
-
-// velocity estimators for each joint
-std::array<VelocityObserver, 7> leader_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
-std::array<VelocityObserver, 7> follower_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
-
-// to store previous time step torques for DOB
-std::array<double, 7> tau_in_prev;
 
 
 
@@ -693,9 +665,8 @@ int main () {
             std::array<double, 7> follower_vel_est;
             follower_vel_est.fill(0.0);
             for (int i : active_joints) {
-                follower_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
-                // estimate leader vel from position as its state is sent through a connection
-                // leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]);
+                // we can add velocity observers here if needed
+                follower_vel_est[i] = joint_vel[i];
                 leader_vel_est[i] = leader_vel[i];
             }
 
@@ -792,12 +763,10 @@ int main () {
             file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
-            std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            //std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
-
-            tau_in_prev = tau_cmd_rate_limited;
 
             return tau_cmd_rate_limited;
 

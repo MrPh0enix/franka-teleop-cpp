@@ -16,7 +16,7 @@ public:
     };
 
     ProMPWrapper(
-        const std::string& samples_path,
+        const std::string& demos_path,
         int basis = 8,
         int dof = 7,
         int Nd = 12,
@@ -25,10 +25,9 @@ public:
 
     Result eucledean_dist_pos(const std::array<double,7>& real_time_joint_angles);
 
-    std::vector<double> get_init_pos();
+    std::array<double, 7> get_init_pos() const;
 
 private:
-    int n_data;
     std::vector<std::vector<double>> meanTraj;
     std::vector<std::vector<double>> stdTraj;
 

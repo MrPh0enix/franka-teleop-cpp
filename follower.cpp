@@ -30,6 +30,8 @@
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
 
+#include "ProMPWrapper.hpp"
+
 
 
 #define BUFFER_SIZE 2048
@@ -284,6 +286,11 @@ int main () {
         // contact switch sensitivity
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
 
+        //proMPs
+        ProMPWrapper proMP(
+            "../ProMP/STRAIGHT_LINE_DEMOS/"
+        );
+
         //connect to robot and initialize vals
         franka::Robot robot(config["follower"]["robot"].as<std::string>());
         shared_robot_state = robot.readOnce();
@@ -291,8 +298,14 @@ int main () {
 
         // move robot to start
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
+        MotionGenerator motion_generator_home(0.5, home_pos);
+        robot.control(motion_generator_home);
+
+        //activate in case of adaptive guidance
+        const std::array<double, 7> proMP_init_pos = proMP.get_init_pos();
+        MotionGenerator motion_generator_proMP(0.5, proMP_init_pos);
+        robot.control(motion_generator_proMP);
+        
 
         // start sub thread
         std::thread sub_thread(subThread, std::cref(config));

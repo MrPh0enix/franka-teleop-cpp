@@ -31,8 +31,6 @@
 #include <franka/rate_limiting.h>
 #include "examples_common.h"
 
-#include <pybind11/embed.h>
-
 #include "ProMPWrapper.hpp"
 
 
@@ -286,7 +284,7 @@ int main () {
         const double contact_threshold = config["global"]["contact_threshold"].as<double>();
 
         //proMPs
-        ProMPWrapper promp(
+        ProMPWrapper proMP(
             "../ProMP/STRAIGHT_LINE_DEMOS/"
         );
 
@@ -297,8 +295,14 @@ int main () {
 
         // move robot to start
         const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
+        MotionGenerator motion_generator_home(0.5, home_pos);
+        robot.control(motion_generator_home);
+
+        //activate in case of adaptive guidance
+        const std::array<double, 7> proMP_init_pos = proMP.get_init_pos();
+        MotionGenerator motion_generator_proMP(0.5, proMP_init_pos);
+        robot.control(motion_generator_proMP);
+
 
         // start publisher thread
         std::thread pub_thread(pubThread, std::cref(config));
@@ -342,9 +346,24 @@ int main () {
             // initialize trqs
             std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
 
-            auto result = promp.eucledean_dist_pos(joint_pos);
+            if (!sub_connected.load()) {
+
+                return torques;
+        
+            };
+
+            auto result = proMP.eucledean_dist_pos(joint_pos);
             auto desired_q = result.desired_joint_positions;
             auto std_dev = result.current_stdDev;
+
+            // Compute torques
+            for (int i = 0; i < 7; ++i) {
+
+                double vel = joint_vel[i];
+                double pos_error = desired_q[i] - joint_pos[i];
+                torques[i] = ((scale * P_gain[i] * pos_error) / (1 + std_dev[i])) - (scale * D_gain[i] * vel);
+                
+            };
 
             return torques;
 
@@ -756,8 +775,9 @@ int main () {
 
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
             // std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralAdaptiveGuidanceTrqs(joint_pos, joint_vel);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 

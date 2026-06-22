@@ -48,25 +48,25 @@ std::atomic<bool> sub_connected{false}; // detects if subscriber connected
 std::atomic<char> control_rob{'L'}; // default to leader(L)
 
 
-// velocity estimators for each joint
-std::array<VelocityObserver, 7> leader_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
-std::array<VelocityObserver, 7> follower_vel_estimators = {
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
-    VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
-};
+// // velocity estimators for each joint
+// std::array<VelocityObserver, 7> leader_vel_estimators = {
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
+// };
+// std::array<VelocityObserver, 7> follower_vel_estimators = {
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER),
+//     VelocityObserver(200, 0.001, VelocityObserver::Method::EULER)
+// };
 
 
 
@@ -331,11 +331,11 @@ int main () {
         
 
         
-        std::ofstream file("output_leader.txt", std::ios::app);
-        if (!file.is_open()) {
-            std::cerr << "Failed to open file\n";
-            return 1;
-        }
+        // std::ofstream file("output_leader.txt", std::ios::app);
+        // if (!file.is_open()) {
+        //     std::cerr << "Failed to open file\n";
+        //     return 1;
+        // }
 
    
 
@@ -639,7 +639,7 @@ int main () {
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = {5, 6};
+            std::vector<int> active_joints = {3, 4, 5};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -656,29 +656,29 @@ int main () {
             follower_vel_est.fill(0.0);
             for (int i = 0; i < 7; ++i) {
                 leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
-                // estimate follower vel from position as its state is sent through a connection
-                // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]);
                 follower_vel_est[i] = follower_vel[i];
+                // estimate follower vel from position as its state is sent through a connection (optional)
+                // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]);
             }
 
 
             // Compute desired accelerations
             for (int i: active_joints) {
-                // separatate implementation for testing
-                double pos_error = joint_pos[i] - follower_pos[i];
-                double vel_error = leader_vel_est[i] - follower_vel_est[i];
-                double vel_tot = leader_vel_est[i] + follower_vel_est[i];
-                double trq_tot = jnt_trq[i] + follower_trq[i];
-                acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error))
-                            - ((C_f[i] / (2 * 1)) * (trq_tot));
-
-                // // current derivation
+                // // separatate implementation for testing
                 // double pos_error = joint_pos[i] - follower_pos[i];
                 // double vel_error = leader_vel_est[i] - follower_vel_est[i];
                 // double vel_tot = leader_vel_est[i] + follower_vel_est[i];
-                // double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
-                // acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                //             - ((C_y[i] / 2) * (vel_tot))  - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
+                // double trq_tot = jnt_trq[i] + follower_trq[i];
+                // acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error))
+                //             - ((C_f[i] / (2 * 1)) * (trq_tot));
+
+                // current derivation
+                double pos_error = joint_pos[i] - follower_pos[i];
+                double vel_error = leader_vel_est[i] - follower_vel_est[i];
+                double vel_tot = leader_vel_est[i] + follower_vel_est[i];
+                double ext_trq_tot = jnt_trq[i] + follower_trq[i];
+                acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
+                            - ((C_y[i] / 2) * (vel_tot))  - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
             }
 
             // // Compute torques
@@ -690,7 +690,7 @@ int main () {
 
             // Compute torques
             for (int i : active_joints) {
-                torques[i] += MOI[i*7 + i] * acc[i];
+                torques[i] = a_n[i] * acc[i];
             }
             
 
@@ -728,12 +728,12 @@ int main () {
             }
 
             
-            std::array<double, 7> motor_pos = robot_state.theta;
-            std::array<double, 7> motor_trq = robot_state.tau_J;
-            std::array<double, 7> motor_vel = robot_state.dtheta;
-            std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
+            // std::array<double, 7> motor_pos = robot_state.theta;
+            // std::array<double, 7> motor_trq = robot_state.tau_J;
+            // std::array<double, 7> motor_vel = robot_state.dtheta;
+            // std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
             //write to file
-            file << motor_pos[5] << "," << motor_trq[5] << "," << motor_vel[5] << "," << motor_ext_trq[5] << "," << follower_pos[5] << "," <<follower_trq[5] << "," << follower_vel[5] << "," << follower_ext_trq[5] << "\n";
+            //file << motor_pos[5] << "," << motor_trq[5] << "," << motor_vel[5] << "," << motor_ext_trq[5] << "," << follower_pos[5] << "," <<follower_trq[5] << "," << follower_vel[5] << "," << follower_ext_trq[5] << "\n";
 
 
             return torques;
@@ -767,16 +767,7 @@ int main () {
             bool anyOf = std::any_of(ext_trq.begin(), ext_trq.end(), [&contact_threshold](double x){ return std::abs(x) > contact_threshold;});
             if (anyOf) {
                 control_rob.store('L');
-            }
-            
-
-
-            std::array<double, 7> joint_pos = robot_state.q;
-            std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> motor_pos = robot_state.theta;
-            std::array<double, 7> motor_trq = robot_state.tau_J;
-
-            // std::cout << "Cmd success rate: " << robot_state.control_command_success_rate << std::endl;
+            }    
 
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
@@ -797,7 +788,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback, false);
+                robot.control(trq_control_callback, true);
 
             } catch (const franka::Exception& ex) {
 
@@ -816,7 +807,7 @@ int main () {
         sub_thread.join();
         key_thread.join();
 
-        file.close();
+        // file.close();
 
     } catch (const std::exception& ex) {
 

@@ -694,25 +694,14 @@ int main () {
             std::array<double, 7> follower_vel_est;
             follower_vel_est.fill(0.0);
             for (int i = 0; i < 7; ++i) {
-                follower_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
+                follower_vel_est[i] = joint_vel[i]; 
                 leader_vel_est[i] = leader_vel[i];
-                // estimate leader vel from position as its state is sent through a connection (optional)
-                // leader_vel_est[i] = leader_vel_estimators[i].update(leader_pos[i]);
             }
 
 
 
             // Compute desired accelerations
-            for (int i: active_joints) {
-                // // separate derivation for testing
-                // double pos_error = leader_pos[i] -  joint_pos[i];
-                // double vel_error =  leader_vel_est[i] - follower_vel_est[i];
-                // double vel_tot = follower_vel_est[i] + leader_vel_est[i];
-                // double trq_tot = jnt_trq[i] + leader_trq[i];
-                // acc[i] = + ((C_q[i] / 2) * (pos_error)) + ((C_v[i] / 2) * (vel_error)) 
-                //          - ((C_f[i] / (2 * 1)) * (trq_tot));
-
-                //current derivation
+            for (int i: active_joints) {  
                 double pos_error = joint_pos[i] -  leader_pos[i];
                 double vel_error =  follower_vel_est[i] - leader_vel_est[i];
                 double vel_tot = follower_vel_est[i] + leader_vel_est[i];

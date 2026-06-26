@@ -773,7 +773,7 @@ int main () {
             std::array<double, 7> joint_vel = robot_state.dq;
 
             //write to file
-            file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
+            // file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
             std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);

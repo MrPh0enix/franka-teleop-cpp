@@ -23,11 +23,11 @@ ProMPWrapper::ProMPWrapper(
 
     try {
 
-        py::module_ sys = py::module_::import("sys");
+        py::module sys = py::module::import("sys");
         sys.attr("path").attr("append")("../ProMP"); 
 
-        py::module_ Full_ProMP = py::module_::import("Full_ProMP");
-        py::module_ np = py::module_::import("numpy");
+        py::module Full_ProMP = py::module::import("Full_ProMP");
+        py::module np = py::module::import("numpy");
     
         py::list trajectoriesList;
         py::list timeList;

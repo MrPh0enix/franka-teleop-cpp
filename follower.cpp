@@ -37,7 +37,21 @@
 
 #define BUFFER_SIZE 2048
 
-RobotState::Reader shared_leader_state;
+struct LeaderData {
+    std::array<double, 7> pos{};
+    std::array<double, 7> vel{};
+    std::array<double, 7> ext_trq{};
+    std::array<double, 7> trq{};
+
+    double time = 0.0;
+
+    double gripper_width = 0.0;
+    char control_robot = 'L';
+
+    double joint7_torque_der = 0.0;
+};
+
+LeaderData shared_leader_data;
 franka::RobotState shared_robot_state;
 double shared_gripper_width = 0.08;
 std::mutex state_mutex;
@@ -150,7 +164,6 @@ void pubThread (const YAML::Node& config) {
 
 
 
-
 void subThread (const YAML::Node& config) {
 
     int port = config["leader"]["port"].as<int>();
@@ -190,9 +203,57 @@ void subThread (const YAML::Node& config) {
         capnp::FlatArrayMessageReader reader(receivedData);
         RobotState::Reader leader_state = reader.getRoot<RobotState>();
 
+        LeaderData data;
+
+        data.time = leader_state.getTime();
+
+        data.pos = {
+            leader_state.getJoint1Pos(),
+            leader_state.getJoint2Pos(),
+            leader_state.getJoint3Pos(),
+            leader_state.getJoint4Pos(),
+            leader_state.getJoint5Pos(),
+            leader_state.getJoint6Pos(),
+            leader_state.getJoint7Pos()
+        };
+
+        data.vel = {
+            leader_state.getJoint1Vel(),
+            leader_state.getJoint2Vel(),
+            leader_state.getJoint3Vel(),
+            leader_state.getJoint4Vel(),
+            leader_state.getJoint5Vel(),
+            leader_state.getJoint6Vel(),
+            leader_state.getJoint7Vel()
+        };
+
+        data.trq = {
+            leader_state.getJoint1Torque(),
+            leader_state.getJoint2Torque(),
+            leader_state.getJoint3Torque(),
+            leader_state.getJoint4Torque(),
+            leader_state.getJoint5Torque(),
+            leader_state.getJoint6Torque(),
+            leader_state.getJoint7Torque()
+        };
+
+        data.ext_trq = {
+            leader_state.getJoint1ExtTorque(),
+            leader_state.getJoint2ExtTorque(),
+            leader_state.getJoint3ExtTorque(),
+            leader_state.getJoint4ExtTorque(),
+            leader_state.getJoint5ExtTorque(),
+            leader_state.getJoint6ExtTorque(),
+            leader_state.getJoint7ExtTorque()
+        };
+
+        data.gripper_width = leader_state.getGripperWidth();
+        data.control_robot = static_cast<char>(leader_state.getControlRobot());
+        data.joint7_torque_der = leader_state.getJoint7MeasuredTorqueDer();
+
         {
             std::lock_guard<std::mutex> lock(state_mutex);
-            shared_leader_state = leader_state;
+            shared_leader_data = data;
         }
 
         //set the current control robot
@@ -253,16 +314,14 @@ void setGripperWidth(const YAML::Node& config) {
         franka::GripperState gripperState = gripper.readOnce();
         double gripperWidth =  gripperState.width;
 
-        RobotState::Reader leader_state;
+        double leader_gripper_width;
 
         {
             std::lock_guard<std::mutex> lock(state_mutex);
             shared_gripper_width = gripperWidth;
-            leader_state = shared_leader_state;
+            leader_gripper_width = shared_leader_data.gripper_width;
         }
 
-
-        double leader_gripper_width = leader_state.getGripperWidth();
 
         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
             gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
@@ -357,24 +416,14 @@ int main () {
         
             };
 
-
-            RobotState::Reader leader_state;
+            LeaderData leader_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
+                leader_data = shared_leader_data;
             }
 
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
+            std::array<double, 7> leader_pos = leader_data.pos;
 
 
             // // limit velocity of joints
@@ -409,25 +458,16 @@ int main () {
         
             };
 
-
-            RobotState::Reader leader_state;
+            LeaderData leader_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
+                leader_data = shared_leader_data;
             }
 
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
+            std::array<double, 7> leader_pos = leader_data.pos;
 
-            // // limit velocity of joints
+            // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
             // std::array<double, 7> target_pos = leader_pos;
 
@@ -455,25 +495,16 @@ int main () {
         
             };
 
-
-            RobotState::Reader leader_state;
+            LeaderData leader_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
+                leader_data = shared_leader_data;
             }
 
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
+            std::array<double, 7> leader_pos = leader_data.pos;
 
-            // // limit velocity of joints
+            // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
             // std::array<double, 7> target_pos = leader_pos;
 
@@ -503,54 +534,18 @@ int main () {
         
             };
 
-            RobotState::Reader leader_state;
+            LeaderData leader_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
+                leader_data = shared_leader_data;
             }
 
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-            std::array<double, 7> leader_vel = {
-                leader_state.getJoint1Vel(),
-                leader_state.getJoint2Vel(),
-                leader_state.getJoint3Vel(),
-                leader_state.getJoint4Vel(),
-                leader_state.getJoint5Vel(),
-                leader_state.getJoint6Vel(),
-                leader_state.getJoint7Vel()
-            };
-
-            std::array<double, 7> leader_ext_trq = {
-                leader_state.getJoint1ExtTorque(),
-                leader_state.getJoint2ExtTorque(),
-                leader_state.getJoint3ExtTorque(),
-                leader_state.getJoint4ExtTorque(),
-                leader_state.getJoint5ExtTorque(),
-                leader_state.getJoint6ExtTorque(),
-                leader_state.getJoint7ExtTorque()
-            };
-
-
-            std::array<double, 7> leader_trq = {
-                leader_state.getJoint1Torque(),
-                leader_state.getJoint2Torque(),
-                leader_state.getJoint3Torque(),
-                leader_state.getJoint4Torque(),
-                leader_state.getJoint5Torque(),
-                leader_state.getJoint6Torque(),
-                leader_state.getJoint7Torque()
-            };
-
+            std::array<double, 7> leader_pos = leader_data.pos;
+            std::array<double, 7> leader_vel = leader_data.vel;
+            std::array<double, 7> leader_ext_trq = leader_data.ext_trq;
+            std::array<double, 7> leader_trq = leader_data.trq;
+            double leader7_trq_der = leader_data.joint7_torque_der;
             
             std::array<double, 7> joint_pos = robot_state.q;
             std::array<double, 7> joint_vel = robot_state.dq;
@@ -614,54 +609,18 @@ int main () {
         
             };
 
-            // get follower states
-            RobotState::Reader leader_state;
+            LeaderData leader_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
+                leader_data = shared_leader_data;
             }
 
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-            std::array<double, 7> leader_vel = {
-                leader_state.getJoint1Vel(),
-                leader_state.getJoint2Vel(),
-                leader_state.getJoint3Vel(),
-                leader_state.getJoint4Vel(),
-                leader_state.getJoint5Vel(),
-                leader_state.getJoint6Vel(),
-                leader_state.getJoint7Vel()
-            };
-
-            std::array<double, 7> leader_ext_trq = {
-                leader_state.getJoint1ExtTorque(),
-                leader_state.getJoint2ExtTorque(),
-                leader_state.getJoint3ExtTorque(),
-                leader_state.getJoint4ExtTorque(),
-                leader_state.getJoint5ExtTorque(),
-                leader_state.getJoint6ExtTorque(),
-                leader_state.getJoint7ExtTorque()
-            };
-
-            std::array<double, 7> leader_trq = {
-                leader_state.getJoint1Torque(),
-                leader_state.getJoint2Torque(),
-                leader_state.getJoint3Torque(),
-                leader_state.getJoint4Torque(),
-                leader_state.getJoint5Torque(),
-                leader_state.getJoint6Torque(),
-                leader_state.getJoint7Torque()
-            };
-
+            std::array<double, 7> leader_pos = leader_data.pos;
+            std::array<double, 7> leader_vel = leader_data.vel;
+            std::array<double, 7> leader_ext_trq = leader_data.ext_trq;
+            std::array<double, 7> leader_trq = leader_data.trq;
+            double leader7_trq_der = leader_data.joint7_torque_der;
 
 
             // get leader states
@@ -678,7 +637,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {3, 4, 5};
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -705,24 +664,24 @@ int main () {
                 double pos_error = joint_pos[i] -  leader_pos[i];
                 double vel_error =  follower_vel_est[i] - leader_vel_est[i];
                 double vel_tot = follower_vel_est[i] + leader_vel_est[i];
-                double ext_trq_tot = jnt_trq[i] + leader_trq[i];
+                double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
                 acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                           - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 
             }
 
 
-            // // Compute torques
-            // for (int i : active_joints) {
-            //     for (int j = 0; j < 7; j++) {
-            //         torques[i] += MOI[i*7 + j] * acc[j] ;
-            //     }
-            // }
-
-            // Compute torques with nominal inertia
+            // Compute torques
             for (int i : active_joints) {
-                torques[i] = a_n[i] * acc[i];
+                for (int j = 0; j < 7; j++) {
+                    torques[i] += MOI[i*7 + j] * acc[j] ;
+                }
             }
+
+            // // Compute torques with nominal inertia
+            // for (int i : active_joints) {
+            //     torques[i] = a_n[i] * acc[i];
+            // }
 
 
             // //negating effects of gravity compensation
@@ -737,25 +696,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // Disturbance Observer
-            for (int i : active_joints) {
+            // // Disturbance Observer
+            // for (int i : active_joints) {
 
-                double omega = joint_vel[i];
-                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+            //     double omega = joint_vel[i];
+            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-                // // Al-Alaoui low pass filter
-                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-                // backward Euler
-                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+            //     // // Al-Alaoui low pass filter
+            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+            //     // backward Euler
+            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
                 
-                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-                torques[i] += tau_dis_hat;
+            //     torques[i] += tau_dis_hat;
 
-                lpf_output_prev[i] = lpf_output;
-                lpf_input_prev[i]  = lpf_input;
+            //     lpf_output_prev[i] = lpf_output;
+            //     lpf_input_prev[i]  = lpf_input;
 
-            }
+            // }
 
             return torques;
 
@@ -793,7 +752,7 @@ int main () {
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 
-            return command_torques;
+            return tau_cmd_rate_limited;
 
         };
 
@@ -805,7 +764,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback, true);
+                robot.control(trq_control_callback);
 
             } catch (const franka::Exception& ex) {
 

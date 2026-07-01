@@ -374,7 +374,7 @@ int main () {
         franka::Model model = robot.loadModel();
 
         // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0 + 1.57079633, 1.57079633, 0.78539816};
         MotionGenerator motion_generator(0.5, home_pos);
         robot.control(motion_generator);
 
@@ -637,7 +637,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = {6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -664,24 +664,24 @@ int main () {
                 double pos_error = joint_pos[i] -  leader_pos[i];
                 double vel_error =  follower_vel_est[i] - leader_vel_est[i];
                 double vel_tot = follower_vel_est[i] + leader_vel_est[i];
-                double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
+                double ext_trq_tot = jnt_trq[i] + leader_trq[i];
                 acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                           - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
                 
             }
 
 
-            // Compute torques
-            for (int i : active_joints) {
-                for (int j = 0; j < 7; j++) {
-                    torques[i] += MOI[i*7 + j] * acc[j] ;
-                }
-            }
-
-            // // Compute torques with nominal inertia
+            // // Compute torques
             // for (int i : active_joints) {
-            //     torques[i] = a_n[i] * acc[i];
+            //     for (int j = 0; j < 7; j++) {
+            //         torques[i] += MOI[i*7 + j] * acc[j] ;
+            //     }
             // }
+
+            // Compute torques with nominal inertia
+            for (int i : active_joints) {
+                torques[i] = a_n[i] * acc[i];
+            }
 
 
             // //negating effects of gravity compensation
@@ -696,25 +696,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // // Disturbance Observer
-            // for (int i : active_joints) {
+            // Disturbance Observer
+            for (int i : active_joints) {
 
-            //     double omega = joint_vel[i];
-            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+                double omega = joint_vel[i];
+                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-            //     // // Al-Alaoui low pass filter
-            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-            //     // backward Euler
-            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+                // // Al-Alaoui low pass filter
+                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+                // backward Euler
+                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
                 
-            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-            //     torques[i] += tau_dis_hat;
+                torques[i] += tau_dis_hat;
 
-            //     lpf_output_prev[i] = lpf_output;
-            //     lpf_input_prev[i]  = lpf_input;
+                lpf_output_prev[i] = lpf_output;
+                lpf_input_prev[i]  = lpf_input;
 
-            // }
+            }
 
             return torques;
 

@@ -696,25 +696,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // // Disturbance Observer
-            // for (int i : active_joints) {
+            // Disturbance Observer
+            for (int i : active_joints) {
 
-            //     double omega = joint_vel[i];
-            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+                double omega = joint_vel[i];
+                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-            //     // // Al-Alaoui low pass filter
-            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-            //     // backward Euler
-            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+                // // Al-Alaoui low pass filter
+                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+                // backward Euler
+                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
                 
-            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-            //     torques[i] += tau_dis_hat;
+                torques[i] += tau_dis_hat;
 
-            //     lpf_output_prev[i] = lpf_output;
-            //     lpf_input_prev[i]  = lpf_input;
+                lpf_output_prev[i] = lpf_output;
+                lpf_input_prev[i]  = lpf_input;
 
-            // }
+            }
 
             return torques;
 

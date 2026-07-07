@@ -39,7 +39,24 @@ using namespace std;
 
 #define BUFFER_SIZE 2048
 
-RobotState::Reader shared_follower_state;
+
+
+struct FollowerData {
+    std::array<double, 7> pos{};
+    std::array<double, 7> vel{};
+    std::array<double, 7> ext_trq{};
+    std::array<double, 7> trq{};
+
+    double time = 0.0;
+
+    double gripper_width = 0.0;
+    char control_robot = 'L';
+
+    double joint7_torque_der = 0.0;
+};
+
+
+FollowerData shared_follower_data;
 franka::RobotState shared_robot_state;
 double shared_gripper_width = 0.08;
 std::mutex state_mutex;
@@ -155,8 +172,8 @@ void pubThread (const YAML::Node& config) {
 }
 
 
-
 void subThread(const YAML::Node& config) {
+
 
     int port = config["follower"]["port"].as<int>();
 
@@ -195,9 +212,57 @@ void subThread(const YAML::Node& config) {
         capnp::FlatArrayMessageReader reader(receivedData);
         RobotState::Reader follower_state = reader.getRoot<RobotState>();
 
+        FollowerData data;
+
+        data.time = follower_state.getTime();
+
+        data.pos = {
+            follower_state.getJoint1Pos(),
+            follower_state.getJoint2Pos(),
+            follower_state.getJoint3Pos(),
+            follower_state.getJoint4Pos(),
+            follower_state.getJoint5Pos(),
+            follower_state.getJoint6Pos(),
+            follower_state.getJoint7Pos()
+        };
+
+        data.vel = {
+            follower_state.getJoint1Vel(),
+            follower_state.getJoint2Vel(),
+            follower_state.getJoint3Vel(),
+            follower_state.getJoint4Vel(),
+            follower_state.getJoint5Vel(),
+            follower_state.getJoint6Vel(),
+            follower_state.getJoint7Vel()
+        };
+
+        data.trq = {
+            follower_state.getJoint1Torque(),
+            follower_state.getJoint2Torque(),
+            follower_state.getJoint3Torque(),
+            follower_state.getJoint4Torque(),
+            follower_state.getJoint5Torque(),
+            follower_state.getJoint6Torque(),
+            follower_state.getJoint7Torque()
+        };
+
+        data.ext_trq = {
+            follower_state.getJoint1ExtTorque(),
+            follower_state.getJoint2ExtTorque(),
+            follower_state.getJoint3ExtTorque(),
+            follower_state.getJoint4ExtTorque(),
+            follower_state.getJoint5ExtTorque(),
+            follower_state.getJoint6ExtTorque(),
+            follower_state.getJoint7ExtTorque()
+        };
+
+        data.gripper_width = follower_state.getGripperWidth();
+        data.control_robot = static_cast<char>(follower_state.getControlRobot());
+        data.joint7_torque_der = follower_state.getJoint7MeasuredTorqueDer();
+
         {
             std::lock_guard<std::mutex> lock(state_mutex);
-            shared_follower_state = follower_state;
+            shared_follower_data = data;
         }
 
         //set the current control robot
@@ -310,7 +375,7 @@ int main () {
         franka::Model model = robot.loadModel();
 
         // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0 + 1.57079633, 1.57079633, 0.78539816};
         MotionGenerator motion_generator(0.5, home_pos);
         robot.control(motion_generator);
 
@@ -331,11 +396,11 @@ int main () {
         
 
         
-        // std::ofstream file("output_leader.txt", std::ios::app);
-        // if (!file.is_open()) {
-        //     std::cerr << "Failed to open file\n";
-        //     return 1;
-        // }
+        std::ofstream file("output_leader.txt", std::ios::app);
+        if (!file.is_open()) {
+            std::cerr << "Failed to open file\n";
+            return 1;
+        }
 
    
 
@@ -362,22 +427,14 @@ int main () {
         
             };
 
-            RobotState::Reader follower_state;
+            FollowerData follower_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                follower_state = shared_follower_state;
+                follower_data = shared_follower_data;
             }
 
-            std::array<double, 7> follower_pos = {
-                follower_state.getJoint1Pos(),
-                follower_state.getJoint2Pos(),
-                follower_state.getJoint3Pos(),
-                follower_state.getJoint4Pos(),
-                follower_state.getJoint5Pos(),
-                follower_state.getJoint6Pos(),
-                follower_state.getJoint7Pos()
-            };
+            std::array<double, 7> follower_pos = follower_data.pos;
 
             // // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, follower_pos, joint_pos);
@@ -406,22 +463,14 @@ int main () {
         
             };
 
-            RobotState::Reader follower_state;
+            FollowerData follower_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                follower_state = shared_follower_state;
+                follower_data = shared_follower_data;
             }
 
-            std::array<double, 7> follower_pos = {
-                follower_state.getJoint1Pos(),
-                follower_state.getJoint2Pos(),
-                follower_state.getJoint3Pos(),
-                follower_state.getJoint4Pos(),
-                follower_state.getJoint5Pos(),
-                follower_state.getJoint6Pos(),
-                follower_state.getJoint7Pos()
-            };
+            std::array<double, 7> follower_pos = follower_data.pos;
 
             // // limit velocity of joints
             std::array<double, 7> target_pos = franka::limitRate(velo_limits, follower_pos, joint_pos);
@@ -452,54 +501,18 @@ int main () {
         
             };
 
-            RobotState::Reader follower_state;
+            FollowerData follower_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                follower_state = shared_follower_state;
+                follower_data = shared_follower_data;
             }
 
-            std::array<double, 7> follower_pos = {
-                follower_state.getJoint1Pos(),
-                follower_state.getJoint2Pos(),
-                follower_state.getJoint3Pos(),
-                follower_state.getJoint4Pos(),
-                follower_state.getJoint5Pos(),
-                follower_state.getJoint6Pos(),
-                follower_state.getJoint7Pos()
-            };
-
-            std::array<double, 7> follower_vel = {
-                follower_state.getJoint1Vel(),
-                follower_state.getJoint2Vel(),
-                follower_state.getJoint3Vel(),
-                follower_state.getJoint4Vel(),
-                follower_state.getJoint5Vel(),
-                follower_state.getJoint6Vel(),
-                follower_state.getJoint7Vel()
-            };
-
-            std::array<double, 7> follower_ext_trq = {
-                follower_state.getJoint1ExtTorque(),
-                follower_state.getJoint2ExtTorque(),
-                follower_state.getJoint3ExtTorque(),
-                follower_state.getJoint4ExtTorque(),
-                follower_state.getJoint5ExtTorque(),
-                follower_state.getJoint6ExtTorque(),
-                follower_state.getJoint7ExtTorque()
-            };
-
-            std::array<double, 7> follower_trq = {
-                follower_state.getJoint1Torque(),
-                follower_state.getJoint2Torque(),
-                follower_state.getJoint3Torque(),
-                follower_state.getJoint4Torque(),
-                follower_state.getJoint5Torque(),
-                follower_state.getJoint6Torque(),
-                follower_state.getJoint7Torque()
-            };
-
-            double follower6_trq_der = follower_state.getJoint7MeasuredTorqueDer();
+            std::array<double, 7> follower_pos = follower_data.pos;
+            std::array<double, 7> follower_vel = follower_data.vel;
+            std::array<double, 7> follower_ext_trq = follower_data.ext_trq;
+            std::array<double, 7> follower_trq = follower_data.trq;
+            double follower7_trq_der = follower_data.joint7_torque_der;
 
 
             
@@ -576,53 +589,17 @@ int main () {
         
             };
 
-            // get follower states
-            RobotState::Reader follower_state;
+            FollowerData follower_data;
 
             {
                 std::lock_guard<std::mutex> lock(state_mutex);
-                follower_state = shared_follower_state;
+                follower_data = shared_follower_data;
             }
 
-            std::array<double, 7> follower_pos = {
-                follower_state.getJoint1Pos(),
-                follower_state.getJoint2Pos(),
-                follower_state.getJoint3Pos(),
-                follower_state.getJoint4Pos(),
-                follower_state.getJoint5Pos(),
-                follower_state.getJoint6Pos(),
-                follower_state.getJoint7Pos()
-            };
-
-            std::array<double, 7> follower_vel = {
-                follower_state.getJoint1Vel(),
-                follower_state.getJoint2Vel(),
-                follower_state.getJoint3Vel(),
-                follower_state.getJoint4Vel(),
-                follower_state.getJoint5Vel(),
-                follower_state.getJoint6Vel(),
-                follower_state.getJoint7Vel()
-            };
-
-            std::array<double, 7> follower_ext_trq = {
-                follower_state.getJoint1ExtTorque(),
-                follower_state.getJoint2ExtTorque(),
-                follower_state.getJoint3ExtTorque(),
-                follower_state.getJoint4ExtTorque(),
-                follower_state.getJoint5ExtTorque(),
-                follower_state.getJoint6ExtTorque(),
-                follower_state.getJoint7ExtTorque()
-            };
-
-            std::array<double, 7> follower_trq = {
-                follower_state.getJoint1Torque(),
-                follower_state.getJoint2Torque(),
-                follower_state.getJoint3Torque(),
-                follower_state.getJoint4Torque(),
-                follower_state.getJoint5Torque(),
-                follower_state.getJoint6Torque(),
-                follower_state.getJoint7Torque()
-            };
+            std::array<double, 7> follower_pos = follower_data.pos;
+            std::array<double, 7> follower_vel = follower_data.vel;
+            std::array<double, 7> follower_ext_trq = follower_data.ext_trq;
+            std::array<double, 7> follower_trq = follower_data.trq;
 
 
 
@@ -639,7 +616,7 @@ int main () {
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = {3, 4, 5};
+            std::vector<int> active_joints = {6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -655,24 +632,13 @@ int main () {
             std::array<double, 7> follower_vel_est;
             follower_vel_est.fill(0.0);
             for (int i = 0; i < 7; ++i) {
-                leader_vel_est[i] = joint_vel[i]; // franka already provides filtered vel
+                leader_vel_est[i] = joint_vel[i];
                 follower_vel_est[i] = follower_vel[i];
-                // estimate follower vel from position as its state is sent through a connection (optional)
-                // follower_vel_est[i] = follower_vel_estimators[i].update(follower_pos[i]);
             }
 
 
             // Compute desired accelerations
             for (int i: active_joints) {
-                // // separatate implementation for testing
-                // double pos_error = joint_pos[i] - follower_pos[i];
-                // double vel_error = leader_vel_est[i] - follower_vel_est[i];
-                // double vel_tot = leader_vel_est[i] + follower_vel_est[i];
-                // double trq_tot = jnt_trq[i] + follower_trq[i];
-                // acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error))
-                //             - ((C_f[i] / (2 * 1)) * (trq_tot));
-
-                // current derivation
                 double pos_error = joint_pos[i] - follower_pos[i];
                 double vel_error = leader_vel_est[i] - follower_vel_est[i];
                 double vel_tot = leader_vel_est[i] + follower_vel_est[i];
@@ -732,8 +698,16 @@ int main () {
             // std::array<double, 7> motor_trq = robot_state.tau_J;
             // std::array<double, 7> motor_vel = robot_state.dtheta;
             // std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
-            //write to file
-            //file << motor_pos[5] << "," << motor_trq[5] << "," << motor_vel[5] << "," << motor_ext_trq[5] << "," << follower_pos[5] << "," <<follower_trq[5] << "," << follower_vel[5] << "," << follower_ext_trq[5] << "\n";
+            // // write to file
+            // file << motor_pos[0] << "," << motor_pos[1] << "," << motor_pos[2] << "," << motor_pos[3] << "," << motor_pos[4] << "," << motor_pos[5] << "," << motor_pos[6] << ","
+            // << motor_trq[0] << "," << motor_trq[1] << "," << motor_trq[2] << "," << motor_trq[3] << "," << motor_trq[4] << "," << motor_trq[5] << "," << motor_trq[6] << ","
+            // << motor_vel[0] << "," << motor_vel[1] << "," << motor_vel[2] << "," << motor_vel[3] << "," << motor_vel[4] << ","  << motor_vel[5] << "," << motor_vel[6] << "," 
+            // << follower_pos[0] << "," << follower_pos[1] << "," << follower_pos[2] << "," << follower_pos[3] << "," << follower_pos[4] << "," << follower_pos[5] << "," << follower_pos[6] << "," 
+            // << follower_trq[0] << ","  <<follower_trq[1] << "," <<follower_trq[2] << "," <<follower_trq[3] << "," <<follower_trq[4] << "," <<follower_trq[5] << "," <<follower_trq[6] << ","
+            // << follower_vel[0] << "," << follower_vel[1] << "," << follower_vel[2] << "," << follower_vel[3] << "," << follower_vel[4] << "," << follower_vel[5] << "," << follower_vel[6] << ","
+            // << motor_ext_trq[0] << "," << motor_ext_trq[1] << "," << motor_ext_trq[2] << "," << motor_ext_trq[3] << "," << motor_ext_trq[4] << "," << motor_ext_trq[5] << "," << motor_ext_trq[6] << ","
+            // << follower_ext_trq[0] << ","  << follower_ext_trq[1] << "," << follower_ext_trq[2] << "," << follower_ext_trq[3] << "," << follower_ext_trq[4] << "," << follower_ext_trq[5] << "," << follower_ext_trq[6] << ","
+            // << "\n";
 
 
             return torques;
@@ -776,7 +750,7 @@ int main () {
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 
-            return command_torques;
+            return tau_cmd_rate_limited;
 
         };
 
@@ -788,7 +762,7 @@ int main () {
             try {
 
                 //execute control loop
-                robot.control(trq_control_callback, true);
+                robot.control(trq_control_callback);
 
             } catch (const franka::Exception& ex) {
 
@@ -807,7 +781,7 @@ int main () {
         sub_thread.join();
         key_thread.join();
 
-        // file.close();
+        file.close();
 
     } catch (const std::exception& ex) {
 

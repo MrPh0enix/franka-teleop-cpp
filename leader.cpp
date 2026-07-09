@@ -616,7 +616,7 @@ int main () {
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = {6};
+            std::vector<int> active_joints = {5, 6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;

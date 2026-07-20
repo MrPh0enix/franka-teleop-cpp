@@ -374,7 +374,7 @@ int main () {
         franka::Model model = robot.loadModel();
 
         // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0 + 1.57, 1.57079633, 0.78539816};
         MotionGenerator motion_generator(0.5, home_pos);
         robot.control(motion_generator);
 
@@ -637,7 +637,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = { 2, 3, 4, 5, 6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;

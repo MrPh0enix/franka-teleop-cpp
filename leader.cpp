@@ -610,13 +610,41 @@ int main () {
             std::array<double, 7> jnt_trq = robot_state.tau_J;
 
 
+            // Motor trq estimation
+            double dT = 0.001;		// Sampling time
+            double A = 26288;		// Estimated Parameter Alpha
+            double B = 3609000;		// Estimated Parameter Beta
+            double G = 28152;		// Estimated Parameter Gamma
+            double D = 3609600;		// Estimated Parameter Delta
+            
+            double TauNew;			// Variable for the most current torque variable
+            double TauOld = 0.0;			// Variable for the previous step torque variable
+            double TauFil;			// Variable for the low-pass filtered torque variable
+            double FilNew;			// Variable for current LPF output
+            double FilOld = 0.0;			// Variable for previous step LPF output
+            double Var1;			// Extra variable
+            double Var2;			// Extra variable
+            
+            TauNew = jnt_trq[6];			// Here XXX should be replaced by the most current, non-filtered torque measurement from the sensor
+            
+            Var1 = (1/A)*(TauNew-TauOld)/dT;						
+            Var2 = (A*G-B)/(A*A);
+            FilNew = (1/((B/A)*dT+1)*(FilOld+(B/A)*dT*TauNew));
+            TauFil = Var1 + Var2 + FilNew*(B/(A*A)+(D/B)-(G/A));
+            
+            TauOld = TauNew;
+            FilOld = FilNew;
+
+
+
+
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = {5, 6};
+            std::vector<int> active_joints = {6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -694,20 +722,21 @@ int main () {
             }
 
             
-            // std::array<double, 7> motor_pos = robot_state.theta;
-            // std::array<double, 7> motor_trq = robot_state.tau_J;
-            // std::array<double, 7> motor_vel = robot_state.dtheta;
-            // std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
-            // // write to file
-            // file << motor_pos[0] << "," << motor_pos[1] << "," << motor_pos[2] << "," << motor_pos[3] << "," << motor_pos[4] << "," << motor_pos[5] << "," << motor_pos[6] << ","
-            // << motor_trq[0] << "," << motor_trq[1] << "," << motor_trq[2] << "," << motor_trq[3] << "," << motor_trq[4] << "," << motor_trq[5] << "," << motor_trq[6] << ","
-            // << motor_vel[0] << "," << motor_vel[1] << "," << motor_vel[2] << "," << motor_vel[3] << "," << motor_vel[4] << ","  << motor_vel[5] << "," << motor_vel[6] << "," 
-            // << follower_pos[0] << "," << follower_pos[1] << "," << follower_pos[2] << "," << follower_pos[3] << "," << follower_pos[4] << "," << follower_pos[5] << "," << follower_pos[6] << "," 
-            // << follower_trq[0] << ","  <<follower_trq[1] << "," <<follower_trq[2] << "," <<follower_trq[3] << "," <<follower_trq[4] << "," <<follower_trq[5] << "," <<follower_trq[6] << ","
-            // << follower_vel[0] << "," << follower_vel[1] << "," << follower_vel[2] << "," << follower_vel[3] << "," << follower_vel[4] << "," << follower_vel[5] << "," << follower_vel[6] << ","
-            // << motor_ext_trq[0] << "," << motor_ext_trq[1] << "," << motor_ext_trq[2] << "," << motor_ext_trq[3] << "," << motor_ext_trq[4] << "," << motor_ext_trq[5] << "," << motor_ext_trq[6] << ","
-            // << follower_ext_trq[0] << ","  << follower_ext_trq[1] << "," << follower_ext_trq[2] << "," << follower_ext_trq[3] << "," << follower_ext_trq[4] << "," << follower_ext_trq[5] << "," << follower_ext_trq[6] << ","
-            // << "\n";
+            std::array<double, 7> motor_pos = robot_state.theta;
+            std::array<double, 7> motor_trq = robot_state.tau_J;
+            std::array<double, 7> motor_vel = robot_state.dtheta;
+            std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
+            // write to file
+            file << motor_pos[0] << "," << motor_pos[1] << "," << motor_pos[2] << "," << motor_pos[3] << "," << motor_pos[4] << "," << motor_pos[5] << "," << motor_pos[6] << ","
+            << motor_trq[0] << "," << motor_trq[1] << "," << motor_trq[2] << "," << motor_trq[3] << "," << motor_trq[4] << "," << motor_trq[5] << "," << motor_trq[6] << ","
+            << motor_vel[0] << "," << motor_vel[1] << "," << motor_vel[2] << "," << motor_vel[3] << "," << motor_vel[4] << ","  << motor_vel[5] << "," << motor_vel[6] << "," 
+            << follower_pos[0] << "," << follower_pos[1] << "," << follower_pos[2] << "," << follower_pos[3] << "," << follower_pos[4] << "," << follower_pos[5] << "," << follower_pos[6] << "," 
+            << follower_trq[0] << ","  <<follower_trq[1] << "," <<follower_trq[2] << "," <<follower_trq[3] << "," <<follower_trq[4] << "," <<follower_trq[5] << "," <<follower_trq[6] << ","
+            << follower_vel[0] << "," << follower_vel[1] << "," << follower_vel[2] << "," << follower_vel[3] << "," << follower_vel[4] << "," << follower_vel[5] << "," << follower_vel[6] << ","
+            << motor_ext_trq[0] << "," << motor_ext_trq[1] << "," << motor_ext_trq[2] << "," << motor_ext_trq[3] << "," << motor_ext_trq[4] << "," << motor_ext_trq[5] << "," << motor_ext_trq[6] << ","
+            << follower_ext_trq[0] << ","  << follower_ext_trq[1] << "," << follower_ext_trq[2] << "," << follower_ext_trq[3] << "," << follower_ext_trq[4] << "," << follower_ext_trq[5] << "," << follower_ext_trq[6] << ","
+            << TauFil << ","
+            << "\n";
 
 
             return torques;

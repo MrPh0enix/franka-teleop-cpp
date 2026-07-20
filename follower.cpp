@@ -630,6 +630,33 @@ int main () {
             std::array<double, 7> jnt_trq = robot_state.tau_J;
 
 
+            // Motor trq estimation
+            double dT = 0.001;		// Sampling time
+            double A = 26288;		// Estimated Parameter Alpha
+            double B = 3609000;		// Estimated Parameter Beta
+            double G = 28152;		// Estimated Parameter Gamma
+            double D = 3609600;		// Estimated Parameter Delta
+            
+            double TauNew;			// Variable for the most current torque variable
+            double TauOld = 0.0;			// Variable for the previous step torque variable
+            double TauFil;			// Variable for the low-pass filtered torque variable
+            double FilNew;			// Variable for current LPF output
+            double FilOld = 0.0;			// Variable for previous step LPF output
+            double Var1;			// Extra variable
+            double Var2;			// Extra variable
+            
+            TauNew = jnt_trq[6];			// Here XXX should be replaced by the most current, non-filtered torque measurement from the sensor
+            
+            Var1 = (1/A)*(TauNew-TauOld)/dT;						
+            Var2 = (A*G-B)/(A*A);
+            FilNew = (1/((B/A)*dT+1)*(FilOld+(B/A)*dT*TauNew));
+            TauFil = Var1 + Var2 + FilNew*(B/(A*A)+(D/B)-(G/A));
+            
+            TauOld = TauNew;
+            FilOld = FilNew;
+
+
+
             // moment of inertia matrix
             std::array<double, 49> MOI = model.mass(robot_state);
 
@@ -637,7 +664,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {5, 6};
+            std::vector<int> active_joints = {6};
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;

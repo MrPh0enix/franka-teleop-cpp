@@ -24,7 +24,7 @@ find_package(Eigen3 REQUIRED)
 # find_package(Franka REQUIRED)
 
 # use libfarnka 0.18.0
-set(FRANKA_ROOT "/home/john/libfranka/build")
+set(FRANKA_ROOT "/home/johnkiran/libfranka/build")
 find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
 
 

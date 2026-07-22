@@ -46,6 +46,7 @@ struct FollowerData {
     std::array<double, 7> vel{};
     std::array<double, 7> ext_trq{};
     std::array<double, 7> trq{};
+    std::array<double, 7> trq_der{};
 
     double time = 0.0;
 
@@ -154,7 +155,13 @@ void pubThread (const YAML::Node& config) {
         leader_state.setJoint7ExtTorque(state_to_publish.tau_ext_hat_filtered[6]);
         leader_state.setGripperWidth(gripperWidth);
         leader_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
-        leader_state.setJoint7MeasuredTorqueDer(state_to_publish.dtau_J[6]);
+        leader_state.setJoint1ExtTorqueDer(state_to_publish.dtau_J[0]);
+        leader_state.setJoint2ExtTorqueDer(state_to_publish.dtau_J[1]);
+        leader_state.setJoint3ExtTorqueDer(state_to_publish.dtau_J[2]);
+        leader_state.setJoint4ExtTorqueDer(state_to_publish.dtau_J[3]);
+        leader_state.setJoint5ExtTorqueDer(state_to_publish.dtau_J[4]);
+        leader_state.setJoint6ExtTorqueDer(state_to_publish.dtau_J[5]);
+        leader_state.setJoint7ExtTorqueDer(state_to_publish.dtau_J[6]);
         
 
         kj::VectorOutputStream state_message;
@@ -256,9 +263,19 @@ void subThread(const YAML::Node& config) {
             follower_state.getJoint7ExtTorque()
         };
 
+        data.trq_der = {
+            follower_state.getJoint1ExtTorqueDer(),
+            follower_state.getJoint2ExtTorqueDer(),
+            follower_state.getJoint3ExtTorqueDer(),
+            follower_state.getJoint4ExtTorqueDer(),
+            follower_state.getJoint5ExtTorqueDer(),
+            follower_state.getJoint6ExtTorqueDer(),
+            follower_state.getJoint7ExtTorqueDer()
+        };
+
         data.gripper_width = follower_state.getGripperWidth();
         data.control_robot = static_cast<char>(follower_state.getControlRobot());
-        data.joint7_torque_der = follower_state.getJoint7MeasuredTorqueDer();
+        
 
         {
             std::lock_guard<std::mutex> lock(state_mutex);
@@ -375,7 +392,8 @@ int main () {
         franka::Model model = robot.loadModel();
 
         // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0 + 1.57, 1.57079633, 0.78539816};
+        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0 + 1.57, 1.57079633, 0.78539816}; 
+        
         MotionGenerator motion_generator(0.5, home_pos);
         robot.control(motion_generator);
 
@@ -571,8 +589,6 @@ int main () {
         };
 
 
-        
-
 
 
         auto computeBilateralWithDOB = [&](const franka::RobotState& robot_state) {
@@ -600,6 +616,7 @@ int main () {
             std::array<double, 7> follower_vel = follower_data.vel;
             std::array<double, 7> follower_ext_trq = follower_data.ext_trq;
             std::array<double, 7> follower_trq = follower_data.trq;
+            std::array<double, 7> follower_trq_der = follower_data.trq_der;
 
 
 
@@ -608,6 +625,7 @@ int main () {
             std::array<double, 7> joint_vel = robot_state.dtheta;
             std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
             std::array<double, 7> jnt_trq = robot_state.tau_J;
+            std::array<double, 7> jnt_trq_der = robot_state.dtau_J;
 
 
             // moment of inertia matrix
@@ -616,7 +634,9 @@ int main () {
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = { 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+
+            
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -641,7 +661,8 @@ int main () {
             for (int i: active_joints) {
                 double pos_error = joint_pos[i] - follower_pos[i];
                 double vel_error = leader_vel_est[i] - follower_vel_est[i];
-                double vel_tot = leader_vel_est[i] + follower_vel_est[i];
+                // double vel_tot = leader_vel_est[i] + follower_vel_est[i];
+                double vel_tot = jnt_trq_der[i] + follower_trq_der[i];
                 double ext_trq_tot = ext_trq[i] + follower_ext_trq[i];
                 acc[i] = - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
                             - ((C_y[i] / 2) * (vel_tot))  - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
@@ -673,25 +694,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // Disturbance Observer
-            for (int i : active_joints) {
+            // // Disturbance Observer
+            // for (int i : active_joints) {
 
-                double omega = joint_vel[i];
-                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+            //     double omega = joint_vel[i];
+            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-                // // Al-Alaoui low pass filter
-                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-                // backward Euler
-                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+            //     // // Al-Alaoui low pass filter
+            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+            //     // backward Euler
+            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
 
-                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-                torques[i] += tau_dis_hat;
+            //     torques[i] += tau_dis_hat;
 
-                lpf_output_prev[i] = lpf_output;
-                lpf_input_prev[i]  = lpf_input;
+            //     lpf_output_prev[i] = lpf_output;
+            //     lpf_input_prev[i]  = lpf_input;
 
-            }
+            // }
 
             
             // std::array<double, 7> motor_pos = robot_state.theta;
@@ -735,10 +756,13 @@ int main () {
                 control_rob.store('L');
             }    
 
+            std::array<double, 7> joint_pos = robot_state.theta;
+            std::array<double, 7> joint_vel = robot_state.dtheta;
+
 
             // std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            // std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
-            std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
+            std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
+            // std::array<double, 7> command_torques = computeBilateralWithDOB(robot_state);
 
             std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
 

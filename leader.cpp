@@ -634,7 +634,7 @@ int main () {
             //coriolis
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5 ,6 };
 
             
 
@@ -668,17 +668,17 @@ int main () {
                             - ((C_y[i] / 2) * (vel_tot))  - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
             }
 
-            // Compute torques
-            for (int i : active_joints) {
-                for (int j = 0; j < 7; j++) {
-                    torques[i] += MOI[i*7 + j] * acc[j] ;
-                }
-            }
-
             // // Compute torques
             // for (int i : active_joints) {
-            //     torques[i] = a_n[i] * acc[i];
+            //     for (int j = 0; j < 7; j++) {
+            //         torques[i] += MOI[i*7 + j] * acc[j] ;
+            //     }
             // }
+
+            // Compute torques
+            for (int i : active_joints) {
+                torques[i] = a_n[i] * acc[i];
+            }
             
 
 
@@ -694,41 +694,41 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // Disturbance Observer
-            for (int i : active_joints) {
+            // // Disturbance Observer
+            // for (int i : active_joints) {
 
-                double omega = joint_vel[i];
-                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+            //     double omega = joint_vel[i];
+            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-                // // Al-Alaoui low pass filter
-                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-                // backward Euler
-                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+            //     // // Al-Alaoui low pass filter
+            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+            //     // backward Euler
+            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
 
-                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-                torques[i] += tau_dis_hat;
+            //     torques[i] += tau_dis_hat;
 
-                lpf_output_prev[i] = lpf_output;
-                lpf_input_prev[i]  = lpf_input;
+            //     lpf_output_prev[i] = lpf_output;
+            //     lpf_input_prev[i]  = lpf_input;
 
-            }
+            // }
 
             
-            std::array<double, 7> motor_pos = robot_state.theta;
-            std::array<double, 7> motor_trq = robot_state.tau_J;
-            std::array<double, 7> motor_vel = robot_state.dtheta;
-            std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
-            // write to file
-            file << motor_pos[0] << "," << motor_pos[1] << "," << motor_pos[2] << "," << motor_pos[3] << "," << motor_pos[4] << "," << motor_pos[5] << "," << motor_pos[6] << ","
-            << motor_trq[0] << "," << motor_trq[1] << "," << motor_trq[2] << "," << motor_trq[3] << "," << motor_trq[4] << "," << motor_trq[5] << "," << motor_trq[6] << ","
-            << motor_vel[0] << "," << motor_vel[1] << "," << motor_vel[2] << "," << motor_vel[3] << "," << motor_vel[4] << ","  << motor_vel[5] << "," << motor_vel[6] << "," 
-            << follower_pos[0] << "," << follower_pos[1] << "," << follower_pos[2] << "," << follower_pos[3] << "," << follower_pos[4] << "," << follower_pos[5] << "," << follower_pos[6] << "," 
-            << follower_trq[0] << ","  <<follower_trq[1] << "," <<follower_trq[2] << "," <<follower_trq[3] << "," <<follower_trq[4] << "," <<follower_trq[5] << "," <<follower_trq[6] << ","
-            << follower_vel[0] << "," << follower_vel[1] << "," << follower_vel[2] << "," << follower_vel[3] << "," << follower_vel[4] << "," << follower_vel[5] << "," << follower_vel[6] << ","
-            << motor_ext_trq[0] << "," << motor_ext_trq[1] << "," << motor_ext_trq[2] << "," << motor_ext_trq[3] << "," << motor_ext_trq[4] << "," << motor_ext_trq[5] << "," << motor_ext_trq[6] << ","
-            << follower_ext_trq[0] << ","  << follower_ext_trq[1] << "," << follower_ext_trq[2] << "," << follower_ext_trq[3] << "," << follower_ext_trq[4] << "," << follower_ext_trq[5] << "," << follower_ext_trq[6] << ","
-            << "\n";
+            // std::array<double, 7> motor_pos = robot_state.theta;
+            // std::array<double, 7> motor_trq = robot_state.tau_J;
+            // std::array<double, 7> motor_vel = robot_state.dtheta;
+            // std::array<double, 7> motor_ext_trq = robot_state.tau_ext_hat_filtered;
+            // // write to file
+            // file << motor_pos[0] << "," << motor_pos[1] << "," << motor_pos[2] << "," << motor_pos[3] << "," << motor_pos[4] << "," << motor_pos[5] << "," << motor_pos[6] << ","
+            // << motor_trq[0] << "," << motor_trq[1] << "," << motor_trq[2] << "," << motor_trq[3] << "," << motor_trq[4] << "," << motor_trq[5] << "," << motor_trq[6] << ","
+            // << motor_vel[0] << "," << motor_vel[1] << "," << motor_vel[2] << "," << motor_vel[3] << "," << motor_vel[4] << ","  << motor_vel[5] << "," << motor_vel[6] << "," 
+            // << follower_pos[0] << "," << follower_pos[1] << "," << follower_pos[2] << "," << follower_pos[3] << "," << follower_pos[4] << "," << follower_pos[5] << "," << follower_pos[6] << "," 
+            // << follower_trq[0] << ","  <<follower_trq[1] << "," <<follower_trq[2] << "," <<follower_trq[3] << "," <<follower_trq[4] << "," <<follower_trq[5] << "," <<follower_trq[6] << ","
+            // << follower_vel[0] << "," << follower_vel[1] << "," << follower_vel[2] << "," << follower_vel[3] << "," << follower_vel[4] << "," << follower_vel[5] << "," << follower_vel[6] << ","
+            // << motor_ext_trq[0] << "," << motor_ext_trq[1] << "," << motor_ext_trq[2] << "," << motor_ext_trq[3] << "," << motor_ext_trq[4] << "," << motor_ext_trq[5] << "," << motor_ext_trq[6] << ","
+            // << follower_ext_trq[0] << ","  << follower_ext_trq[1] << "," << follower_ext_trq[2] << "," << follower_ext_trq[3] << "," << follower_ext_trq[4] << "," << follower_ext_trq[5] << "," << follower_ext_trq[6] << ","
+            // << "\n";
 
             return torques;
 

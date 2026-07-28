@@ -341,7 +341,7 @@ void setGripperWidth(const YAML::Node& config) {
 
 
         if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
+            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>(), 0.05, 0.05);
         } else if (leader_gripper_width >= 0.04) {
             gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
         }
@@ -656,7 +656,7 @@ int main () {
             std::array<double, 7> coriolis = model.coriolis(robot_state);
 
 
-            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5, 6};
+            std::vector<int> active_joints = {0, 1, 2, 3, 4, 5 ,6 };
 
             // nominal inertia for DOB
             std::array<double, 7> a_n;
@@ -690,17 +690,17 @@ int main () {
             }
 
 
-            // Compute torques
-            for (int i : active_joints) {
-                for (int j = 0; j < 7; j++) {
-                    torques[i] += MOI[i*7 + j] * acc[j] ;
-                }
-            }
-
-            // // Compute torques with nominal inertia
+            // // Compute torques
             // for (int i : active_joints) {
-            //     torques[i] = a_n[i] * acc[i];
+            //     for (int j = 0; j < 7; j++) {
+            //         torques[i] += MOI[i*7 + j] * acc[j] ;
+            //     }
             // }
+
+            // Compute torques with nominal inertia
+            for (int i : active_joints) {
+                torques[i] = a_n[i] * acc[i];
+            }
 
 
             // //negating effects of gravity compensation
@@ -715,25 +715,25 @@ int main () {
             static std::array<double, 7> lpf_input_prev;
 
 
-            // Disturbance Observer
-            for (int i : active_joints) {
+            // // Disturbance Observer
+            // for (int i : active_joints) {
 
-                double omega = joint_vel[i];
-                double lpf_input = torques[i] + a_n[i] * g_dob * omega;
+            //     double omega = joint_vel[i];
+            //     double lpf_input = torques[i] + a_n[i] * g_dob * omega;
                 
-                // // Al-Alaoui low pass filter
-                // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
-                // backward Euler
-                double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
+            //     // // Al-Alaoui low pass filter
+            //     // double lpf_output = (1.0 / (7.0*g_dob*T_dob + 8.0)) * ((8.0 - g_dob*T_dob)*lpf_output_prev[i] + 7.0*g_dob*T_dob*lpf_input + g_dob*T_dob*lpf_input_prev[i]);
+            //     // backward Euler
+            //     double lpf_output = (1.0 / (g_dob*T_dob + 1.0)) * (lpf_output_prev[i] + g_dob*T_dob*lpf_input);
                 
-                double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
+            //     double tau_dis_hat = lpf_output - a_n[i]*g_dob*omega;
 
-                torques[i] += tau_dis_hat;
+            //     torques[i] += tau_dis_hat;
 
-                lpf_output_prev[i] = lpf_output;
-                lpf_input_prev[i]  = lpf_input;
+            //     lpf_output_prev[i] = lpf_output;
+            //     lpf_input_prev[i]  = lpf_input;
 
-            }
+            // }
 
             return torques;
 

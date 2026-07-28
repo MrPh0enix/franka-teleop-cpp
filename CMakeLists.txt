@@ -74,7 +74,7 @@ target_link_libraries(follower
 )
 
 
-add_executable(leader 
+add_executable(leader
             leader.cpp
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})

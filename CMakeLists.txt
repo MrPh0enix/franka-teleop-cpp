@@ -60,7 +60,7 @@ target_link_libraries(utils
 
 # compile the executables
 add_executable(follower
-            follower.cpp
+            follower_optimized.cpp
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
 
@@ -75,7 +75,7 @@ target_link_libraries(follower
 
 
 add_executable(leader
-            leader.cpp
+            leader_optimized.cpp
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
 

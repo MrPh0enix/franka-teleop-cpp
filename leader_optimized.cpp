@@ -358,14 +358,10 @@ int main() {
   try {
     const YAML::Node config = YAML::LoadFile("../teleop_config.yml");
 
-    const std::vector<double> c_q =
-        config["global"]["C_q"].as<std::vector<double>>();
-    const std::vector<double> c_v =
-        config["global"]["C_v"].as<std::vector<double>>();
-    const std::vector<double> c_y =
-        config["global"]["C_y"].as<std::vector<double>>();
-    const std::vector<double> c_f =
-        config["global"]["C_f"].as<std::vector<double>>();
+    const std::vector<double> c_q = config["global"]["C_q"].as<std::vector<double>>();
+    const std::vector<double> c_v = config["global"]["C_v"].as<std::vector<double>>();
+    const std::vector<double> c_y = config["global"]["C_y"].as<std::vector<double>>();
+    const std::vector<double> c_f = config["global"]["C_f"].as<std::vector<double>>();
 
     if (c_q.size() != kJointCount || c_v.size() != kJointCount ||
         c_y.size() != kJointCount || c_f.size() != kJointCount) {
@@ -451,13 +447,13 @@ int main() {
       std::array<double, kJointCount> desired_acceleration{};
 
       for (std::size_t i = 0; i < kJointCount; ++i) {
+
+      #ifdef TELEOP_BILATERAL
+
         const double position_error =
             robot_state.theta[i] - cached_follower_data.pos[i];
         const double velocity_error =
             robot_state.dtheta[i] - cached_follower_data.vel[i];
-
-        // This intentionally preserves the user's current leader-side
-        // force-feedback/DOB implementation, including its torque-derivative term.
         const double velocity_sum =
             robot_state.dtau_J[i] + cached_follower_data.trq_der[i];
         const double external_torque_sum =
@@ -469,6 +465,16 @@ int main() {
             (c_v[i] / 2.0) * velocity_error -
             (c_y[i] / 2.0) * velocity_sum -
             (c_f[i] / 2.0) * external_torque_sum;
+
+      #elif defined(TELEOP_UNILATERAL)
+        
+        // local damping for leader
+        // desired_acceleration[i] = -leader_damping[i] * robot_state.dtheta[i];
+        desired_acceleration[i] = 0.0;
+
+      #else
+      #error "A teleoperation mode must be selected"
+      #endif
 
         const double nominal_inertia = mass_matrix[i * kJointCount + i];
         command_torques[i] = nominal_inertia * desired_acceleration[i];

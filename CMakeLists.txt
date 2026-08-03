@@ -58,14 +58,36 @@ target_link_libraries(utils
 )
 
 
-# compile the executables
-add_executable(follower
-            follower_optimized.cpp
+set(LEADER_SOURCE leader_optimized.cpp)
+set(FOLLOWER_SOURCE follower_optimized.cpp)
+
+
+#unilateral executables
+add_executable(leader_unilateral
+            ${LEADER_SOURCE}
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
+target_compile_definitions(
+    leader_unilateral
+    PRIVATE TELEOP_UNILATERAL
+)
+target_link_libraries(leader_unilateral
+    utils
+    Franka::Franka
+    CapnProto::capnp
+    CapnProto::kj
+    yaml-cpp
+)
 
-# Link libraries
-target_link_libraries(follower
+add_executable(follower_unilateral
+            ${FOLLOWER_SOURCE}
+            ${CAPNP_SRCS}
+            ${CAPNP_HDRS})
+target_compile_definitions(
+    follower_unilateral
+    PRIVATE TELEOP_UNILATERAL
+)
+target_link_libraries(follower_unilateral
     utils
     Franka::Franka
     CapnProto::capnp
@@ -74,13 +96,32 @@ target_link_libraries(follower
 )
 
 
-add_executable(leader
-            leader_optimized.cpp
+#bilateral executables
+add_executable(leader_bilateral
+            ${LEADER_SOURCE}
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
+target_compile_definitions(
+    leader_bilateral
+    PRIVATE TELEOP_BILATERAL
+)
+target_link_libraries(leader_bilateral
+    utils
+    Franka::Franka
+    CapnProto::capnp
+    CapnProto::kj
+    yaml-cpp
+)
 
-# Link libraries
-target_link_libraries(leader
+add_executable(follower_bilateral
+            ${FOLLOWER_SOURCE}
+            ${CAPNP_SRCS}
+            ${CAPNP_HDRS})
+target_compile_definitions(
+    follower_bilateral
+    PRIVATE TELEOP_BILATERAL
+)
+target_link_libraries(follower_bilateral
     utils
     Franka::Franka
     CapnProto::capnp

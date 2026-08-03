@@ -455,10 +455,9 @@ int main() {
         const double velocity_error =
             robot_state.dtheta[i] - cached_follower_data.vel[i];
         const double velocity_sum =
-            robot_state.dtau_J[i] + cached_follower_data.trq_der[i];
-        const double external_torque_sum =
-            robot_state.tau_ext_hat_filtered[i] +
-            cached_follower_data.ext_trq[i];
+            robot_state.dtheta[i] + cached_follower_data.vel[i];
+        const double external_torque_sum = 
+            robot_state.tau_ext_hat_filtered[i] + cached_follower_data.ext_trq[i];
 
         desired_acceleration[i] =
             -(c_q[i] / 2.0) * position_error -

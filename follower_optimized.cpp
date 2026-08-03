@@ -346,7 +346,7 @@ void gripperThread(const YAML::Node& config) {
     const double open_threshold =
         config["gripper"]["open_threshold"]
             ? config["gripper"]["open_threshold"].as<double>()
-            : 0.04;
+            : 0.06;
     const double object_width =
         config["gripper"]["object_width"].as<double>();
     const double speed = config["gripper"]["speed"].as<double>();
@@ -515,7 +515,6 @@ int main() {
       #else
       #error "A teleoperation mode must be selected"
       #endif
-
         const double nominal_inertia = mass_matrix[i * kJointCount + i];
         command_torques[i] = nominal_inertia * desired_acceleration[i];
       }

@@ -77,10 +77,7 @@ double nowSeconds() {
   return std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
 }
 
-int readOptionalInt(const YAML::Node& config,
-                    const char* section,
-                    const char* key,
-                    int fallback) {
+int readOptionalInt(const YAML::Node& config, const char* section, const char* key, int fallback) {
   const YAML::Node value = config[section][key];
   return value ? value.as<int>() : fallback;
 }

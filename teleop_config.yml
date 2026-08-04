@@ -42,4 +42,5 @@ gripper:
   object_width: 0.055
   gripping_force: 90
   speed: 0.1
-  grip_threshold: 0.08
+  close_threshold: 0.08
+  open_threshold: 0.06

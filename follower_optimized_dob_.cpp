@@ -63,8 +63,8 @@ namespace
     double gripper_width = 0.08;
   };
 
-  RemoteRobotData shared_follower_data;
-  PublishedRobotData shared_leader_data;
+  RemoteRobotData shared_leader_data;
+  PublishedRobotData shared_follower_data;
 
   std::mutex remote_state_mutex;
   std::mutex publish_state_mutex;
@@ -116,8 +116,8 @@ namespace
 
   void publisherThread(const YAML::Node &config)
   {
-    const std::string ip = config["leader"]["ip"].as<std::string>();
-    const int port = config["leader"]["port"].as<int>();
+    const std::string ip = config["follower"]["ip"].as<std::string>();
+    const int port = config["follower"]["port"].as<int>();
     const int publish_frequency = config["global"]["freq"].as<int>();
 
     if (publish_frequency <= 0)
@@ -140,7 +140,7 @@ namespace
     send_address.sin_port = htons(port);
     if (inet_pton(AF_INET, ip.c_str(), &send_address.sin_addr) != 1)
     {
-      std::cerr << "Invalid leader IP address: " << ip << '\n';
+      std::cerr << "Invalid follower IP address: " << ip << '\n';
       close(socket_fd);
       running.store(false);
       return;
@@ -157,7 +157,7 @@ namespace
       PublishedRobotData snapshot;
       {
         std::lock_guard<std::mutex> lock(publish_state_mutex);
-        snapshot = shared_leader_data;
+        snapshot = shared_follower_data;
       }
 
       capnp::MallocMessageBuilder message;
@@ -210,7 +210,7 @@ namespace
                                   sizeof(send_address));
       if (sent < 0 && running.load(std::memory_order_relaxed))
       {
-        perror("Failed to publish leader state");
+        perror("Failed to publish follower state");
       }
 
       std::this_thread::sleep_until(next_wakeup);
@@ -221,7 +221,7 @@ namespace
 
   void subscriberThread(const YAML::Node &config)
   {
-    const int port = config["follower"]["port"].as<int>();
+    const int port = config["leader"]["port"].as<int>();
     const int receive_timeout_ms =
         readOptionalInt(config, "global", "udp_receive_timeout_ms", 100);
 
@@ -275,7 +275,7 @@ namespace
         }
         if (running.load(std::memory_order_relaxed))
         {
-          perror("Failed to receive follower state");
+          perror("Failed to receive leader state");
         }
         break;
       }
@@ -326,14 +326,14 @@ namespace
 
         {
           std::lock_guard<std::mutex> lock(remote_state_mutex);
-          shared_follower_data = snapshot;
+          shared_leader_data = snapshot;
         }
         last_rx_ns.store(nowNanoseconds(), std::memory_order_release);
         sub_connected.store(true, std::memory_order_release);
       }
       catch (const kj::Exception &exception)
       {
-        std::cerr << "Invalid follower packet: " << exception.getDescription().cStr()
+        std::cerr << "Invalid leader packet: " << exception.getDescription().cStr()
                   << '\n';
       }
     }
@@ -381,21 +381,66 @@ namespace
   {
     try
     {
-      franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
+      franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
+
+      const double close_threshold = config["gripper"]["close_threshold"].as<double>();
+      const double open_threshold = config["gripper"]["open_threshold"].as<double>();
+      const double object_width = config["gripper"]["object_width"].as<double>();
+      const double speed = config["gripper"]["speed"].as<double>();
+      const double gripping_force = config["gripper"]["gripping_force"].as<double>();
+
+      enum class Command
+      {
+        kUnknown,
+        kOpen,
+        kClose
+      };
+      Command previous_command = Command::kUnknown;
 
       while (running.load(std::memory_order_relaxed))
       {
         const franka::GripperState gripper_state = gripper.readOnce();
+
+        double leader_width = 0.08;
+        {
+          std::lock_guard<std::mutex> lock(remote_state_mutex);
+          leader_width = shared_leader_data.gripper_width;
+        }
         {
           std::lock_guard<std::mutex> lock(publish_state_mutex);
-          shared_leader_data.gripper_width = gripper_state.width;
+          shared_follower_data.gripper_width = gripper_state.width;
         }
+
+        Command requested_command = previous_command;
+        if (leader_width < close_threshold)
+        {
+          requested_command = Command::kClose;
+        }
+        else if (leader_width >= open_threshold)
+        {
+          requested_command = Command::kOpen;
+        }
+
+        if (requested_command != previous_command)
+        {
+          if (requested_command == Command::kClose &&
+              !gripper_state.is_grasped)
+          {
+            gripper.grasp(object_width, speed, gripping_force, 0.05, 0.05);
+          }
+          else if (requested_command == Command::kOpen)
+          {
+            gripper.move(open_threshold, speed);
+          }
+          previous_command = requested_command;
+        }
+
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
       }
     }
     catch (const franka::Exception &exception)
     {
-      std::cerr << "Leader gripper error: " << exception.what() << '\n';
+      std::cerr << "Follower gripper error: " << exception.what() << '\n';
       running.store(false);
     }
   }
@@ -424,26 +469,12 @@ int main()
     const std::int64_t stale_timeout_ns =
         static_cast<std::int64_t>(stale_timeout_ms) * 1'000'000LL;
 
-    // Disturbance-observer parameters. Start conservatively and tune gradually.
-    const double g_dob =
-        readOptionalDouble(config, "global", "g_dob", 50.0);
-    const double dob_gain =
-        readOptionalDouble(config, "global", "dob_gain", 0.1);
-    const double max_dob_torque =
-        readOptionalDouble(config, "global", "max_dob_torque", 1.0);
+    const double g_dob = readOptionalDouble(config, "global", "g_dob", 50.0);
 
-    if (!(g_dob > 0.0) || !(dob_gain >= 0.0) ||
-        !(max_dob_torque > 0.0))
-    {
-      throw std::runtime_error(
-          "g_dob and max_dob_torque must be positive, and dob_gain must be non-negative");
-    }
-
-    franka::Robot robot(config["leader"]["robot"].as<std::string>());
+    franka::Robot robot(config["follower"]["robot"].as<std::string>());
     const franka::Model model = robot.loadModel();
 
-    const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
+    const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
     MotionGenerator motion_generator(0.5, home_position);
     robot.control(motion_generator);
 
@@ -456,21 +487,21 @@ int main()
     const franka::RobotState initial_state = robot.readOnce();
     {
       std::lock_guard<std::mutex> lock(publish_state_mutex);
-      shared_leader_data.pos = initial_state.theta;
-      shared_leader_data.vel = initial_state.dtheta;
-      shared_leader_data.trq = initial_state.tau_J;
-      shared_leader_data.ext_trq = initial_state.tau_ext_hat_filtered;
-      shared_leader_data.trq_der = initial_state.dtau_J;
+      shared_follower_data.pos = initial_state.theta;
+      shared_follower_data.vel = initial_state.dtheta;
+      shared_follower_data.trq = initial_state.tau_J;
+      shared_follower_data.ext_trq = initial_state.tau_ext_hat_filtered;
+      shared_follower_data.trq_der = initial_state.dtau_J;
     }
 
-    std::thread publisher(publisherThread, std::cref(config));
     std::thread subscriber(subscriberThread, std::cref(config));
+    std::thread publisher(publisherThread, std::cref(config));
     std::thread gripper(gripperThread, std::cref(config));
     std::thread keyboard(keyListener);
 
-    RemoteRobotData cached_follower_data;
+    RemoteRobotData cached_leader_data;
 
-    // Persistent state of the seven independent joint-space DOB filters.
+    // Persistent state of the DOB.
     std::array<double, kJointCount> dob_lpf_output{};
     std::array<bool, kJointCount> dob_initialized{};
 
@@ -495,11 +526,11 @@ int main()
       // Never block the 1 kHz callback on a publisher thread.
       if (publish_state_mutex.try_lock())
       {
-        shared_leader_data.pos = robot_state.theta;
-        shared_leader_data.vel = robot_state.dtheta;
-        shared_leader_data.trq = robot_state.tau_J;
-        shared_leader_data.ext_trq = robot_state.tau_ext_hat_filtered;
-        shared_leader_data.trq_der = robot_state.dtau_J;
+        shared_follower_data.pos = robot_state.theta;
+        shared_follower_data.vel = robot_state.dtheta;
+        shared_follower_data.trq = robot_state.tau_J;
+        shared_follower_data.ext_trq = robot_state.tau_ext_hat_filtered;
+        shared_follower_data.trq_der = robot_state.dtau_J;
         publish_state_mutex.unlock();
       }
 
@@ -521,7 +552,7 @@ int main()
       // Never wait for the UDP thread. Reuse the last complete snapshot if busy.
       if (remote_state_mutex.try_lock())
       {
-        cached_follower_data = shared_follower_data;
+        cached_leader_data = shared_leader_data;
         remote_state_mutex.unlock();
       }
 
@@ -530,16 +561,14 @@ int main()
 
       for (std::size_t i = 0; i < kJointCount; ++i)
       {
+        const double position_error = robot_state.theta[i] - cached_leader_data.pos[i];
+        const double velocity_error = robot_state.dtheta[i] - cached_leader_data.vel[i];
 
 #ifdef TELEOP_BILATERAL
 
-        const double position_error = robot_state.theta[i] - cached_follower_data.pos[i];
+        const double velocity_sum = robot_state.dtheta[i] + cached_leader_data.vel[i];
 
-        const double velocity_error = robot_state.dtheta[i] - cached_follower_data.vel[i];
-
-        const double velocity_sum = robot_state.dtheta[i] + cached_follower_data.vel[i];
-
-        const double external_torque_sum = robot_state.tau_ext_hat_filtered[i] + cached_follower_data.ext_trq[i];
+        const double external_torque_sum = robot_state.tau_ext_hat_filtered[i] + cached_leader_data.ext_trq[i];
 
         desired_acceleration[i] =
             -(c_q[i] / 2.0) * position_error -
@@ -555,8 +584,7 @@ int main()
 
         if (!dob_initialized[i])
         {
-          dob_lpf_output[i] =
-              nominal_inertia * g_dob * omega;
+          dob_lpf_output[i] = nominal_inertia * g_dob * omega;
           dob_initialized[i] = true;
         }
 
@@ -566,15 +594,13 @@ int main()
 
         double tau_dis_hat = lpf_output - nominal_inertia * g_dob * omega;
 
-        tau_dis_hat = std::clamp(tau_dis_hat, -max_dob_torque, max_dob_torque);
-
-        command_torques[i] = nominal_torque + dob_gain * tau_dis_hat;
+        command_torques[i] = nominal_torque + tau_dis_hat;
 
         dob_lpf_output[i] = lpf_output;
 
 #elif defined(TELEOP_UNILATERAL)
 
-        desired_acceleration[i] = 0.0;
+        desired_acceleration[i] = -c_q[i] * position_error - c_v[i] * velocity_error;
 
         const double nominal_inertia = mass_matrix[i * kJointCount + i];
 
@@ -610,10 +636,10 @@ int main()
 
     running.store(false);
 
-    if (publisher.joinable())
-      publisher.join();
     if (subscriber.joinable())
       subscriber.join();
+    if (publisher.joinable())
+      publisher.join();
     if (gripper.joinable())
       gripper.join();
     if (keyboard.joinable())

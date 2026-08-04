@@ -419,31 +419,15 @@ int main()
       throw std::runtime_error("C_q, C_v, C_y, and C_f must each contain 7 values");
     }
 
-    const int stale_timeout_ms =
-        readOptionalInt(config, "global", "stale_packet_timeout_ms", 100);
-    const std::int64_t stale_timeout_ns =
-        static_cast<std::int64_t>(stale_timeout_ms) * 1'000'000LL;
+    const int stale_timeout_ms = readOptionalInt(config, "global", "stale_packet_timeout_ms", 100);
+    const std::int64_t stale_timeout_ns = static_cast<std::int64_t>(stale_timeout_ms) * 1'000'000LL;
 
-    // Disturbance-observer parameters. Start conservatively and tune gradually.
-    const double g_dob =
-        readOptionalDouble(config, "global", "g_dob", 50.0);
-    const double dob_gain =
-        readOptionalDouble(config, "global", "dob_gain", 0.1);
-    const double max_dob_torque =
-        readOptionalDouble(config, "global", "max_dob_torque", 1.0);
-
-    if (!(g_dob > 0.0) || !(dob_gain >= 0.0) ||
-        !(max_dob_torque > 0.0))
-    {
-      throw std::runtime_error(
-          "g_dob and max_dob_torque must be positive, and dob_gain must be non-negative");
-    }
+    const double g_dob = readOptionalDouble(config, "global", "g_dob", 50.0);
 
     franka::Robot robot(config["leader"]["robot"].as<std::string>());
     const franka::Model model = robot.loadModel();
 
-    const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
+    const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
     MotionGenerator motion_generator(0.5, home_position);
     robot.control(motion_generator);
 
@@ -470,7 +454,7 @@ int main()
 
     RemoteRobotData cached_follower_data;
 
-    // Persistent state of the seven independent joint-space DOB filters.
+    // Persistent state of the DOB filters.
     std::array<double, kJointCount> dob_lpf_output{};
     std::array<bool, kJointCount> dob_initialized{};
 
@@ -566,9 +550,7 @@ int main()
 
         double tau_dis_hat = lpf_output - nominal_inertia * g_dob * omega;
 
-        tau_dis_hat = std::clamp(tau_dis_hat, -max_dob_torque, max_dob_torque);
-
-        command_torques[i] = nominal_torque + dob_gain * tau_dis_hat;
+        command_torques[i] = nominal_torque + tau_dis_hat;
 
         dob_lpf_output[i] = lpf_output;
 

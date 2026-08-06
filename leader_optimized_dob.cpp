@@ -5,8 +5,12 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <ctime>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 #include <mutex>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -40,6 +44,7 @@ namespace
 
   constexpr std::size_t kJointCount = 7;
   constexpr std::size_t kBufferSize = 2048;
+  constexpr std::size_t kRecordQueueCapacity = 65536;
   using Clock = std::chrono::steady_clock;
 
   struct RemoteRobotData
@@ -62,6 +67,28 @@ namespace
     std::array<double, kJointCount> trq_der{};
     double gripper_width = 0.08;
   };
+
+struct RecordSample {
+  double local_time = 0.0;
+  double robot_time = 0.0;
+  bool follower_connected = false;
+  std::array<double, kJointCount> leader_pos{};
+  std::array<double, kJointCount> leader_vel{};
+  std::array<double, kJointCount> leader_ext_trq{};
+  std::array<double, kJointCount> leader_trq{};
+  std::array<double, kJointCount> follower_pos{};
+  std::array<double, kJointCount> follower_vel{};
+  std::array<double, kJointCount> follower_ext_trq{};
+  std::array<double, kJointCount> follower_trq{};
+  std::array<double, kJointCount> desired_acc{};
+  std::array<double, kJointCount> command_trq{};
+};
+
+std::array<RecordSample, kRecordQueueCapacity> record_queue;
+std::atomic<std::size_t> record_write_index{0};
+std::atomic<std::size_t> record_read_index{0};
+std::atomic<std::uint64_t> dropped_record_samples{0};
+std::atomic<bool> recording{false};
 
   RemoteRobotData shared_follower_data;
   PublishedRobotData shared_leader_data;
@@ -114,8 +141,140 @@ namespace
     }
   }
 
-  void publisherThread(const YAML::Node &config)
-  {
+
+
+  // Recording functions
+bool enqueueRecordSample(const RecordSample& sample) {
+  const std::size_t write = record_write_index.load(std::memory_order_relaxed);
+  const std::size_t next = (write + 1) % kRecordQueueCapacity;
+  if (next == record_read_index.load(std::memory_order_acquire)) {
+    dropped_record_samples.fetch_add(1, std::memory_order_relaxed);
+    return false;
+  }
+  record_queue[write] = sample;
+  record_write_index.store(next, std::memory_order_release);
+  return true;
+}
+
+bool dequeueRecordSample(RecordSample& sample) {
+  const std::size_t read = record_read_index.load(std::memory_order_relaxed);
+  if (read == record_write_index.load(std::memory_order_acquire)) {
+    return false;
+  }
+  sample = record_queue[read];
+  record_read_index.store((read + 1) % kRecordQueueCapacity,
+                          std::memory_order_release);
+  return true;
+}
+
+std::string makeRecordingFilename() {
+  const auto now = std::chrono::system_clock::now();
+  const std::time_t time = std::chrono::system_clock::to_time_t(now);
+  std::tm tm{};
+  localtime_r(&time, &tm);
+  std::ostringstream stream;
+  stream << "teleop_recording_" << std::put_time(&tm, "%Y%m%d_%H%M%S")
+         << ".csv";
+  return stream.str();
+}
+
+void writeArrayHeader(std::ofstream& file, const char* prefix) {
+  for (std::size_t i = 0; i < kJointCount; ++i) {
+    file << ',' << prefix << (i + 1);
+  }
+}
+
+void writeArray(std::ofstream& file,
+                const std::array<double, kJointCount>& values) {
+  for (double value : values) {
+    file << ',' << value;
+  }
+}
+
+void recorderThread() {
+  std::ofstream file;
+  bool session_active = false;
+  std::uint64_t session_dropped_start = 0;
+  auto last_flush = Clock::now();
+
+  while (running.load(std::memory_order_relaxed) ||
+         record_read_index.load(std::memory_order_acquire) !=
+             record_write_index.load(std::memory_order_acquire)) {
+    const bool should_record = recording.load(std::memory_order_acquire);
+
+    if (should_record && !session_active) {
+      const std::string filename = makeRecordingFilename();
+      file.open(filename, std::ios::out | std::ios::trunc);
+      if (!file) {
+        std::cerr << "Could not open recording file: " << filename << '\n';
+        recording.store(false, std::memory_order_release);
+      } else {
+        file << std::setprecision(17);
+        file << "local_time_s,robot_time_s,follower_connected";
+        writeArrayHeader(file, "leader_q");
+        writeArrayHeader(file, "leader_dq");
+        writeArrayHeader(file, "leader_tau_ext");
+        writeArrayHeader(file, "leader_tau");
+        writeArrayHeader(file, "follower_q");
+        writeArrayHeader(file, "follower_dq");
+        writeArrayHeader(file, "follower_tau_ext");
+        writeArrayHeader(file, "follower_tau");
+        writeArrayHeader(file, "desired_ddq");
+        writeArrayHeader(file, "command_tau");
+        file << '\n';
+        session_dropped_start =
+            dropped_record_samples.load(std::memory_order_relaxed);
+        session_active = true;
+        last_flush = Clock::now();
+        std::cout << "Recording started: " << filename << '\n';
+      }
+    }
+
+    RecordSample sample;
+    bool wrote_sample = false;
+    while (dequeueRecordSample(sample)) {
+      if (session_active) {
+        file << sample.local_time << ',' << sample.robot_time << ','
+             << (sample.follower_connected ? 1 : 0);
+        writeArray(file, sample.leader_pos);
+        writeArray(file, sample.leader_vel);
+        writeArray(file, sample.leader_ext_trq);
+        writeArray(file, sample.leader_trq);
+        writeArray(file, sample.follower_pos);
+        writeArray(file, sample.follower_vel);
+        writeArray(file, sample.follower_ext_trq);
+        writeArray(file, sample.follower_trq);
+        writeArray(file, sample.desired_acc);
+        writeArray(file, sample.command_trq);
+        file << '\n';
+        wrote_sample = true;
+      }
+    }
+
+    if (!should_record && session_active) {
+      file.flush();
+      file.close();
+      const auto dropped = dropped_record_samples.load(std::memory_order_relaxed) -
+                           session_dropped_start;
+      std::cout << "Recording stopped. Dropped samples: " << dropped << '\n';
+      session_active = false;
+    } else if (wrote_sample && Clock::now() - last_flush >= std::chrono::seconds(1)) {
+      // Periodic flushing is intentionally done outside the control callback.
+      file.flush();
+      last_flush = Clock::now();
+    }
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(2));
+  }
+
+  if (file.is_open()) {
+    file.flush();
+    file.close();
+  }
+}
+  
+// Publisher and subscriber functions
+void publisherThread(const YAML::Node& config) {
     const std::string ip = config["leader"]["ip"].as<std::string>();
     const int port = config["leader"]["port"].as<int>();
     const int publish_frequency = config["global"]["freq"].as<int>();
@@ -342,8 +501,10 @@ namespace
     close(socket_fd);
   }
 
-  void keyListener()
-  {
+
+
+// Key listener function
+void keyListener() {
     termios old_settings{};
     if (tcgetattr(STDIN_FILENO, &old_settings) != 0)
     {
@@ -359,13 +520,17 @@ namespace
     const int old_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, old_flags | O_NONBLOCK);
 
-    std::cout << "Running ... Press Q to exit.\n";
+  std::cout << "Running ... Press R to start/stop recording, Q to exit.\n";
 
     while (running.load(std::memory_order_relaxed))
     {
       const int key = getchar();
-      if (key == 'q' || key == 'Q')
-      {
+    if (key == 'r' || key == 'R') {
+      const bool new_state = !recording.load(std::memory_order_relaxed);
+      recording.store(new_state, std::memory_order_release);
+      std::cout << (new_state ? "Recording requested.\n"
+                              : "Stop recording requested.\n");
+    } else if (key == 'q' || key == 'Q') {
         running.store(false);
         std::cout << "Q pressed.\n";
         break;
@@ -428,9 +593,9 @@ int main()
     const double g_dob =
         readOptionalDouble(config, "global", "g_dob", 50.0);
     const double dob_gain =
-        readOptionalDouble(config, "global", "dob_gain", 0.1);
+        readOptionalDouble(config, "global", "dob_gain", 1.0);
     const double max_dob_torque =
-        readOptionalDouble(config, "global", "max_dob_torque", 1.0);
+        readOptionalDouble(config, "global", "max_dob_torque", 50.0);
 
     if (!(g_dob > 0.0) || !(dob_gain >= 0.0) ||
         !(max_dob_torque > 0.0))
@@ -466,6 +631,7 @@ int main()
     std::thread publisher(publisherThread, std::cref(config));
     std::thread subscriber(subscriberThread, std::cref(config));
     std::thread gripper(gripperThread, std::cref(config));
+    std::thread recorder(recorderThread);
     std::thread keyboard(keyListener);
 
     RemoteRobotData cached_follower_data;
@@ -588,6 +754,26 @@ int main()
       const std::array<double, kJointCount> rate_limited_torques =
           franka::limitRate(franka::kMaxTorqueRate, command_torques,
                             robot_state.tau_J_d);
+      
+      if (recording.load(std::memory_order_relaxed)) {
+        RecordSample sample;
+        sample.local_time = nowSeconds();
+        sample.robot_time = robot_state.time.toSec();
+        sample.follower_connected =
+            sub_connected.load(std::memory_order_relaxed);
+        sample.leader_pos = robot_state.theta;
+        sample.leader_vel = robot_state.dtheta;
+        sample.leader_ext_trq = robot_state.tau_ext_hat_filtered;
+        sample.leader_trq = robot_state.tau_J;
+        sample.follower_pos = cached_follower_data.pos;
+        sample.follower_vel = cached_follower_data.vel;
+        sample.follower_ext_trq = cached_follower_data.ext_trq;
+        sample.follower_trq = cached_follower_data.trq;
+        sample.desired_acc = desired_acceleration;
+        sample.command_trq = rate_limited_torques;
+        enqueueRecordSample(sample);
+      }
+
       return rate_limited_torques;
     };
 
@@ -608,19 +794,15 @@ int main()
       }
     }
 
+    recording.store(false, std::memory_order_release);
     running.store(false);
 
-    if (publisher.joinable())
-      publisher.join();
-    if (subscriber.joinable())
-      subscriber.join();
-    if (gripper.joinable())
-      gripper.join();
-    if (keyboard.joinable())
-      keyboard.join();
-  }
-  catch (const std::exception &exception)
-  {
+    if (publisher.joinable()) publisher.join();
+    if (subscriber.joinable()) subscriber.join();
+    if (gripper.joinable()) gripper.join();
+    if (keyboard.joinable()) keyboard.join();
+    if (recorder.joinable()) recorder.join();
+  } catch (const std::exception& exception) {
     running.store(false);
     std::cerr << "Exception: " << exception.what() << '\n';
     return -1;

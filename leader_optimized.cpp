@@ -251,8 +251,6 @@ void recorderThread() {
   }
 }
 
-
-
 // Publisher and subscriber functions
 void publisherThread(const YAML::Node& config) {
   const std::string ip = config["leader"]["ip"].as<std::string>();

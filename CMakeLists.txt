@@ -58,8 +58,8 @@ target_link_libraries(utils
 )
 
 
-set(LEADER_SOURCE leader_optimized.cpp)
-set(FOLLOWER_SOURCE follower_optimized.cpp)
+set(LEADER_SOURCE leader_optimized_dob.cpp)
+set(FOLLOWER_SOURCE follower_optimized_dob.cpp)
 
 
 #unilateral executables

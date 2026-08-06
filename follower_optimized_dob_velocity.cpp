@@ -521,9 +521,7 @@ int main()
     std::array<double, kJointCount> differentiated_velocity{};
     bool differentiator_initialized = false;
 
-    const auto torque_callback =
-        [&](const franka::RobotState &robot_state,
-            franka::Duration period) -> franka::Torques
+    const auto torque_callback = [&](const franka::RobotState &robot_state, franka::Duration period) -> franka::Torques
     {
       if (!running.load(std::memory_order_relaxed))
       {
@@ -539,7 +537,7 @@ int main()
               ? measured_dt
               : 0.001;
 
-      // Backward-difference velocity estimate from motor-side position theta.
+      // velocity estimate
       if (!differentiator_initialized)
       {
         previous_position = robot_state.theta;
@@ -550,8 +548,7 @@ int main()
       {
         for (std::size_t i = 0; i < kJointCount; ++i)
         {
-          differentiated_velocity[i] =
-              (robot_state.theta[i] - previous_position[i]) / dt;
+          differentiated_velocity[i] = (robot_state.theta[i] - previous_position[i]) / dt;
           previous_position[i] = robot_state.theta[i];
         }
       }

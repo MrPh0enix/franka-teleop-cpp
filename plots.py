@@ -1,7 +1,7 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 
-file = "teleop_recording_20260806_161322.csv"
+file = "build/teleop_recording_20260807_112143.csv"
 
 expected_cols = [
     'local_time_s','robot_time_s','follower_connected', 

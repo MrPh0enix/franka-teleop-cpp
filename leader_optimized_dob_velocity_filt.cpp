@@ -690,7 +690,7 @@ int main()
               ? measured_dt
               : 0.001;
 
-      // velocity estimate.
+      // velocity estimate
       if (!velocity_observer_initialized)
       {
         previous_position = robot_state.theta;
@@ -702,9 +702,7 @@ int main()
         for (std::size_t i = 0; i < kJointCount; ++i)
         {
           const double current_position = robot_state.theta[i];
-
           estimated_velocity[i] = (estimated_velocity[i] + g_velocity * current_position - g_velocity * previous_position[i]) / (1.0 + g_velocity * dt);
-
           previous_position[i] = current_position;
         }
       }

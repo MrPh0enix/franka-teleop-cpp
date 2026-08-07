@@ -19,9 +19,11 @@ find_package(Eigen3 REQUIRED)
 # # for libfranka auto
 # find_package(Franka REQUIRED)
 
-# use libfarnka 0.9.2
+# # use libfarnka 0.9.2
 # set(Franka_DIR "/home/johnkiran/libfranka0.9.2/libfranka/build")
 # find_package(Franka REQUIRED)
+
+
 
 # use libfarnka 0.18.0
 set(FRANKA_ROOT "/home/johnkiran/libfranka/build")

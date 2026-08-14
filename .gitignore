@@ -1,3 +1,6 @@
 build/
 lookups/
 recordings/
+.vscode/
+ProMP/STRAIGHT_LINE_DEMOS
+ProMP/__pycache__

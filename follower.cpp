@@ -1,671 +1,696 @@
-
-#include <iostream>
-#include <cstring>
-#include <string>
-#include <mutex>
-#include <thread>
+#include <algorithm>
+#include <array>
 #include <atomic>
-#include <fstream>
+#include <cerrno>
+#include <chrono>
+#include <cmath>
+#include <cstring>
+#include <iostream>
+#include <mutex>
+#include <string>
+#include <thread>
+#include <vector>
+
 #include <yaml-cpp/yaml.h>
 
 // Key listener
-#include <termios.h>
 #include <fcntl.h>
+#include <termios.h>
 
-// for UDP socket
-#include <sys/socket.h>
+// UDP socket
 #include <arpa/inet.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
-//capnp message
+// Cap'n Proto message
 #include <capnp/message.h>
 #include <capnp/serialize.h>
 #include "messages/robot-state.capnp.h"
 
-//franka libs
-#include <franka/model.h>
-#include <franka/robot.h>
-#include <franka/gripper.h>
+// Franka libraries
 #include <franka/exception.h>
+#include <franka/gripper.h>
+#include <franka/model.h>
 #include <franka/rate_limiting.h>
+#include <franka/robot.h>
 #include "examples_common.h"
 
+namespace
+{
 
+  constexpr std::size_t kJointCount = 7;
+  constexpr std::size_t kBufferSize = 2048;
+  using Clock = std::chrono::steady_clock;
 
-#define BUFFER_SIZE 2048
+  struct RemoteRobotData
+  {
+    std::array<double, kJointCount> pos{};
+    std::array<double, kJointCount> vel{};
+    std::array<double, kJointCount> ext_trq{};
+    std::array<double, kJointCount> trq{};
+    std::array<double, kJointCount> trq_der{};
+    double time = 0.0;
+    double gripper_width = 0.0;
+  };
 
-RobotState::Reader shared_leader_state;
-franka::RobotState shared_robot_state;
-double shared_gripper_width = 0.08;
-std::mutex state_mutex;
-std::atomic<bool> running{true};
-std::atomic<bool> sub_connected{false}; // detects if subscriber connected
-std::atomic<char> control_rob{'L'}; //default to leader
+  struct PublishedRobotData
+  {
+    std::array<double, kJointCount> pos{};
+    std::array<double, kJointCount> vel{};
+    std::array<double, kJointCount> ext_trq{};
+    std::array<double, kJointCount> trq{};
+    std::array<double, kJointCount> trq_der{};
+    double gripper_width = 0.08;
+  };
 
+  RemoteRobotData shared_leader_data;
+  PublishedRobotData shared_follower_data;
 
+  std::mutex remote_state_mutex;
+  std::mutex publish_state_mutex;
+  std::atomic<bool> running{true};
+  std::atomic<bool> sub_connected{false};
+  std::atomic<std::int64_t> last_rx_ns{0};
 
+  std::int64_t nowNanoseconds()
+  {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               Clock::now().time_since_epoch())
+        .count();
+  }
 
+  double nowSeconds()
+  {
+    return std::chrono::duration<double>(Clock::now().time_since_epoch()).count();
+  }
 
-void pubThread (const YAML::Node& config) {
+  int readOptionalInt(const YAML::Node &config,
+                      const char *section,
+                      const char *key,
+                      int fallback)
+  {
+    const YAML::Node value = config[section][key];
+    return value ? value.as<int>() : fallback;
+  }
 
-    //config
-    std::string ip = config["follower"]["ip"].as<std::string>();
-    int port = config["follower"]["port"].as<int>();
+  double readOptionalDouble(const YAML::Node &config,
+                            const char *section,
+                            const char *key,
+                            double fallback)
+  {
+    const YAML::Node value = config[section][key];
+    return value ? value.as<double>() : fallback;
+  }
 
-    // socket params
-    int sockPub = socket(AF_INET, SOCK_DGRAM, 0);
-    char buffer[BUFFER_SIZE];
-    struct sockaddr_in send_addr{};
-    send_addr.sin_family = AF_INET;
-    send_addr.sin_port = htons(port);
-    inet_pton(AF_INET, ip.c_str(), &send_addr.sin_addr);
+  void setReceiveTimeout(int socket_fd, int timeout_ms)
+  {
+    timeval timeout{};
+    timeout.tv_sec = timeout_ms / 1000;
+    timeout.tv_usec = (timeout_ms % 1000) * 1000;
+    if (setsockopt(socket_fd, SOL_SOCKET, SO_RCVTIMEO, &timeout,
+                   sizeof(timeout)) < 0)
+    {
+      throw std::runtime_error("Failed to set UDP receive timeout");
+    }
+  }
 
-    const int pub_freq = config["global"]["freq"].as<int>(); //Hz 
+  void publisherThread(const YAML::Node &config)
+  {
+    const std::string ip = config["follower"]["ip"].as<std::string>();
+    const int port = config["follower"]["port"].as<int>();
+    const int publish_frequency = config["global"]["freq"].as<int>();
 
+    if (publish_frequency <= 0)
+    {
+      std::cerr << "Publisher frequency must be positive.\n";
+      running.store(false);
+      return;
+    }
 
-    while (running.load()) {
+    const int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_fd < 0)
+    {
+      perror("Publisher socket creation failed");
+      running.store(false);
+      return;
+    }
 
+    sockaddr_in send_address{};
+    send_address.sin_family = AF_INET;
+    send_address.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip.c_str(), &send_address.sin_addr) != 1)
+    {
+      std::cerr << "Invalid follower IP address: " << ip << '\n';
+      close(socket_fd);
+      running.store(false);
+      return;
+    }
 
-        //build message
-        capnp::MallocMessageBuilder message;
-        RobotState::Builder follower_state = message.initRoot<RobotState>();
-        franka::RobotState state_to_publish;
-        double gripperWidth;
+    const auto period =
+        std::chrono::nanoseconds(1'000'000'000LL / publish_frequency);
+    auto next_wakeup = Clock::now();
+
+    while (running.load(std::memory_order_relaxed))
+    {
+      next_wakeup += period;
+
+      PublishedRobotData snapshot;
+      {
+        std::lock_guard<std::mutex> lock(publish_state_mutex);
+        snapshot = shared_follower_data;
+      }
+
+      capnp::MallocMessageBuilder message;
+      RobotState::Builder state = message.initRoot<RobotState>();
+
+      state.setTime(nowSeconds());
+      state.setJoint1Pos(snapshot.pos[0]);
+      state.setJoint2Pos(snapshot.pos[1]);
+      state.setJoint3Pos(snapshot.pos[2]);
+      state.setJoint4Pos(snapshot.pos[3]);
+      state.setJoint5Pos(snapshot.pos[4]);
+      state.setJoint6Pos(snapshot.pos[5]);
+      state.setJoint7Pos(snapshot.pos[6]);
+      state.setJoint1Vel(snapshot.vel[0]);
+      state.setJoint2Vel(snapshot.vel[1]);
+      state.setJoint3Vel(snapshot.vel[2]);
+      state.setJoint4Vel(snapshot.vel[3]);
+      state.setJoint5Vel(snapshot.vel[4]);
+      state.setJoint6Vel(snapshot.vel[5]);
+      state.setJoint7Vel(snapshot.vel[6]);
+      state.setJoint1Torque(snapshot.trq[0]);
+      state.setJoint2Torque(snapshot.trq[1]);
+      state.setJoint3Torque(snapshot.trq[2]);
+      state.setJoint4Torque(snapshot.trq[3]);
+      state.setJoint5Torque(snapshot.trq[4]);
+      state.setJoint6Torque(snapshot.trq[5]);
+      state.setJoint7Torque(snapshot.trq[6]);
+      state.setJoint1ExtTorque(snapshot.ext_trq[0]);
+      state.setJoint2ExtTorque(snapshot.ext_trq[1]);
+      state.setJoint3ExtTorque(snapshot.ext_trq[2]);
+      state.setJoint4ExtTorque(snapshot.ext_trq[3]);
+      state.setJoint5ExtTorque(snapshot.ext_trq[4]);
+      state.setJoint6ExtTorque(snapshot.ext_trq[5]);
+      state.setJoint7ExtTorque(snapshot.ext_trq[6]);
+      state.setGripperWidth(snapshot.gripper_width);
+      state.setJoint1ExtTorqueDer(snapshot.trq_der[0]);
+      state.setJoint2ExtTorqueDer(snapshot.trq_der[1]);
+      state.setJoint3ExtTorqueDer(snapshot.trq_der[2]);
+      state.setJoint4ExtTorqueDer(snapshot.trq_der[3]);
+      state.setJoint5ExtTorqueDer(snapshot.trq_der[4]);
+      state.setJoint6ExtTorqueDer(snapshot.trq_der[5]);
+      state.setJoint7ExtTorqueDer(snapshot.trq_der[6]);
+
+      kj::VectorOutputStream output;
+      capnp::writeMessage(output, message);
+      const kj::ArrayPtr<const kj::byte> bytes = output.getArray();
+
+      const ssize_t sent = sendto(socket_fd, bytes.begin(), bytes.size(), 0,
+                                  reinterpret_cast<sockaddr *>(&send_address),
+                                  sizeof(send_address));
+      if (sent < 0 && running.load(std::memory_order_relaxed))
+      {
+        perror("Failed to publish follower state");
+      }
+
+      std::this_thread::sleep_until(next_wakeup);
+    }
+
+    close(socket_fd);
+  }
+
+  void subscriberThread(const YAML::Node &config)
+  {
+    const int port = config["leader"]["port"].as<int>();
+    const int receive_timeout_ms =
+        readOptionalInt(config, "global", "udp_receive_timeout_ms", 100);
+
+    const int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+    if (socket_fd < 0)
+    {
+      perror("Subscriber socket creation failed");
+      running.store(false);
+      return;
+    }
+
+    try
+    {
+      setReceiveTimeout(socket_fd, receive_timeout_ms);
+    }
+    catch (const std::exception &exception)
+    {
+      std::cerr << exception.what() << '\n';
+      close(socket_fd);
+      running.store(false);
+      return;
+    }
+
+    sockaddr_in receive_address{};
+    receive_address.sin_family = AF_INET;
+    receive_address.sin_port = htons(port);
+    receive_address.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(socket_fd, reinterpret_cast<sockaddr *>(&receive_address),
+             sizeof(receive_address)) < 0)
+    {
+      perror("Subscriber socket bind failed");
+      close(socket_fd);
+      running.store(false);
+      return;
+    }
+
+    std::cout << "Subscriber listening on port: " << port << '\n';
+    std::array<char, kBufferSize> buffer{};
+
+    while (running.load(std::memory_order_relaxed))
+    {
+      const ssize_t received =
+          recvfrom(socket_fd, buffer.data(), buffer.size(), 0, nullptr, nullptr);
+
+      if (received < 0)
+      {
+        if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+        {
+          continue;
+        }
+        if (running.load(std::memory_order_relaxed))
+        {
+          perror("Failed to receive leader state");
+        }
+        break;
+      }
+
+      if (received == 0)
+      {
+        continue;
+      }
+
+      try
+      {
+        std::vector<capnp::word> aligned_buffer(
+            (static_cast<std::size_t>(received) + sizeof(capnp::word) - 1) /
+            sizeof(capnp::word));
+        std::memcpy(aligned_buffer.data(), buffer.data(),
+                    static_cast<std::size_t>(received));
+
+        const kj::ArrayPtr<const capnp::word> received_data(
+            aligned_buffer.data(), aligned_buffer.size());
+        capnp::FlatArrayMessageReader reader(received_data);
+        const RobotState::Reader state = reader.getRoot<RobotState>();
+
+        RemoteRobotData snapshot;
+        snapshot.time = state.getTime();
+        snapshot.pos = {state.getJoint1Pos(), state.getJoint2Pos(),
+                        state.getJoint3Pos(), state.getJoint4Pos(),
+                        state.getJoint5Pos(), state.getJoint6Pos(),
+                        state.getJoint7Pos()};
+        snapshot.vel = {state.getJoint1Vel(), state.getJoint2Vel(),
+                        state.getJoint3Vel(), state.getJoint4Vel(),
+                        state.getJoint5Vel(), state.getJoint6Vel(),
+                        state.getJoint7Vel()};
+        snapshot.trq = {state.getJoint1Torque(), state.getJoint2Torque(),
+                        state.getJoint3Torque(), state.getJoint4Torque(),
+                        state.getJoint5Torque(), state.getJoint6Torque(),
+                        state.getJoint7Torque()};
+        snapshot.ext_trq = {
+            state.getJoint1ExtTorque(), state.getJoint2ExtTorque(),
+            state.getJoint3ExtTorque(), state.getJoint4ExtTorque(),
+            state.getJoint5ExtTorque(), state.getJoint6ExtTorque(),
+            state.getJoint7ExtTorque()};
+        snapshot.trq_der = {
+            state.getJoint1ExtTorqueDer(), state.getJoint2ExtTorqueDer(),
+            state.getJoint3ExtTorqueDer(), state.getJoint4ExtTorqueDer(),
+            state.getJoint5ExtTorqueDer(), state.getJoint6ExtTorqueDer(),
+            state.getJoint7ExtTorqueDer()};
+        snapshot.gripper_width = state.getGripperWidth();
 
         {
-            std::lock_guard<std::mutex> lock(state_mutex);
-            state_to_publish = shared_robot_state;
-            gripperWidth = shared_gripper_width;
+          std::lock_guard<std::mutex> lock(remote_state_mutex);
+          shared_leader_data = snapshot;
         }
-
-        follower_state.setTime(123456);
-        follower_state.setJoint1Pos(state_to_publish.q[0]);
-        follower_state.setJoint2Pos(state_to_publish.q[1]);
-        follower_state.setJoint3Pos(state_to_publish.q[2]);
-        follower_state.setJoint4Pos(state_to_publish.q[3]);
-        follower_state.setJoint5Pos(state_to_publish.q[4]);
-        follower_state.setJoint6Pos(state_to_publish.q[5]);
-        follower_state.setJoint7Pos(state_to_publish.q[6]);
-        follower_state.setJoint1Vel(state_to_publish.dq[0]);
-        follower_state.setJoint2Vel(state_to_publish.dq[1]);
-        follower_state.setJoint3Vel(state_to_publish.dq[2]);
-        follower_state.setJoint4Vel(state_to_publish.dq[3]);
-        follower_state.setJoint5Vel(state_to_publish.dq[4]);
-        follower_state.setJoint6Vel(state_to_publish.dq[5]);
-        follower_state.setJoint7Vel(state_to_publish.dq[6]);
-        follower_state.setJoint1Torque(state_to_publish.tau_J[0]);
-        follower_state.setJoint2Torque(state_to_publish.tau_J[1]);
-        follower_state.setJoint3Torque(state_to_publish.tau_J[2]);
-        follower_state.setJoint4Torque(state_to_publish.tau_J[3]);
-        follower_state.setJoint5Torque(state_to_publish.tau_J[4]);
-        follower_state.setJoint6Torque(state_to_publish.tau_J[5]);
-        follower_state.setJoint7Torque(state_to_publish.tau_J[6]);
-        follower_state.setJoint1ExtTorque(state_to_publish.tau_J_d[0]);
-        follower_state.setJoint2ExtTorque(state_to_publish.tau_J_d[1]);
-        follower_state.setJoint3ExtTorque(state_to_publish.tau_J_d[2]);
-        follower_state.setJoint4ExtTorque(state_to_publish.tau_J_d[3]);
-        follower_state.setJoint5ExtTorque(state_to_publish.tau_J_d[4]);
-        follower_state.setJoint6ExtTorque(state_to_publish.tau_J_d[5]);
-        follower_state.setJoint7ExtTorque(state_to_publish.tau_J_d[6]);
-        follower_state.setGripperWidth(gripperWidth);
-        follower_state.setControlRobot(static_cast<uint8_t>(control_rob.load()));
-        follower_state.setJoint7MeasuredTorqueDer(state_to_publish.tau_J_d[6]);
-
-        kj::VectorOutputStream state_message;
-        capnp::writeMessage(state_message, message);
-        kj::ArrayPtr<const kj::byte> sz_state_message = state_message.getArray();
-
-        sendto(sockPub, sz_state_message.begin(), sz_state_message.size(), 0, (struct sockaddr *)&send_addr, sizeof(send_addr));
-
-        // sleep
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000/pub_freq));
+        last_rx_ns.store(nowNanoseconds(), std::memory_order_release);
+        sub_connected.store(true, std::memory_order_release);
+      }
+      catch (const kj::Exception &exception)
+      {
+        std::cerr << "Invalid leader packet: " << exception.getDescription().cStr()
+                  << '\n';
+      }
     }
 
-    close(sockPub);
+    sub_connected.store(false, std::memory_order_release);
+    close(socket_fd);
+  }
 
-}
-
-
-
-
-void subThread (const YAML::Node& config) {
-
-    int port = config["leader"]["port"].as<int>();
-
-    //socket params
-    int sockSub = socket(AF_INET, SOCK_DGRAM, 0);
-    char buffer[BUFFER_SIZE];
-    struct sockaddr_in recv_addr{};
-    recv_addr.sin_family = AF_INET;
-    recv_addr.sin_port = htons(port); // port for leader publisher
-    recv_addr.sin_addr.s_addr = INADDR_ANY; // listen on all addresses
-
-    const int sub_freq = config["global"]["freq"].as<int>(); //Hz
-
-    if (bind(sockSub, (struct sockaddr *)&recv_addr, sizeof(recv_addr)) < 0) {
-        perror("Subscriber socket bind failed");
-        close(sockSub);
+  void keyListener()
+  {
+    termios old_settings{};
+    if (tcgetattr(STDIN_FILENO, &old_settings) != 0)
+    {
+      perror("tcgetattr failed");
+      running.store(false);
+      return;
     }
 
-    std::cout << "Subscriber lsitening on port: " << port << std::endl;
-
-    while(running.load()) {
-
-        ssize_t n = recvfrom(sockSub, buffer, sizeof(buffer), 0, nullptr, nullptr);
-
-        if (n < 0) {
-            perror("Socket failed to recv info!");
-            break;
-        } else {
-            sub_connected.store(true);
-        }
-
-        // unpack message
-        std::vector<capnp::word> alignedBuffer((n + sizeof(capnp::word) - 1) / sizeof(capnp::word));
-        memcpy(alignedBuffer.data(), buffer, n);
-        kj::ArrayPtr<const capnp::word> receivedData(alignedBuffer.data(), alignedBuffer.size());
-        capnp::FlatArrayMessageReader reader(receivedData);
-        RobotState::Reader leader_state = reader.getRoot<RobotState>();
-
-        {
-            std::lock_guard<std::mutex> lock(state_mutex);
-            shared_leader_state = leader_state;
-        }
-
-        //set the current control robot
-        control_rob.store(static_cast<char>(leader_state.getControlRobot()));
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(1000/sub_freq));
-
-    }
-
-    close(sockSub);
-
-}
-
-
-
-void keyListener() {
-
-    termios newT, oldT;
-    tcgetattr(STDIN_FILENO, &oldT); //current terminal settings for backup
-
-    newT = oldT;
-    newT.c_lflag &= ~(ICANON | ECHO);
-    tcsetattr(STDIN_FILENO, TCSANOW, &newT);
-
-    // Make thread non blocking
-    int oldFlags = fcntl(STDIN_FILENO, F_GETFL, 0);
-    fcntl(STDIN_FILENO, F_SETFL, oldFlags | O_NONBLOCK);
-
-    std::cout << "Running ... Press Q to exit .." << std::endl;
-
-
-    char key;
-    while(running.load()) {
-        key = getchar();
-        if (key == 'q' || key =='Q') {
-            running.store(false);
-            std::cout << "Q Pressed ...." << std::endl;
-        }
-        usleep(10000); //delay
-    }
-
-    // restore terminal on exit
-    tcsetattr(STDIN_FILENO, TCSANOW, &oldT);
-    fcntl(STDIN_FILENO, F_SETFL, oldFlags);
-
-}
-
-
-
-void setGripperWidth(const YAML::Node& config) {
-
-    //connect to the gripper
-    franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
-
-    while (running.load()) {
-
-        //read gripper state
-        franka::GripperState gripperState = gripper.readOnce();
-        double gripperWidth =  gripperState.width;
-
-        RobotState::Reader leader_state;
-
-        {
-            std::lock_guard<std::mutex> lock(state_mutex);
-            shared_gripper_width = gripperWidth;
-            leader_state = shared_leader_state;
-        }
-
-
-        double leader_gripper_width = leader_state.getGripperWidth();
-
-        // if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-        //     gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>());
-        // } else if (leader_gripper_width >= 0.04) {
-        //     gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
-        // }
-
-        if (leader_gripper_width < config["gripper"]["grip_threshold"].as<double>()  && !gripperState.is_grasped) {
-            gripper.grasp(config["gripper"]["object_width"].as<double>(), config["gripper"]["speed"].as<double>(), config["gripper"]["gripping_force"].as<double>(), 0.02, 0.02);
-        } else if (leader_gripper_width >= config["gripper"]["grip_threshold"].as<double>()) {
-            gripper.move(config["gripper"]["grip_threshold"].as<double>(), config["gripper"]["speed"].as<double>());
-        }
-        
-        
-    }
-
-}
-
-
-
-
-int main () {
-
-    // scale for P and D values
-    constexpr double scale = 1.3;
-
-
-    try {
-
-        // config
-        YAML::Node config = YAML::LoadFile("../teleop_config.yml");
-
-        // Define PGain and DGain and velo_limits
-        std::vector<double> P_gain = config["follower"]["p_vals"].as<std::vector<double>>();
-        std::vector<double> D_gain = config["follower"]["d_vals"].as<std::vector<double>>();
-        std::vector<double> velo_limits_vec = config["global"]["velo_limits"].as<std::vector<double>>();
-        std::array<double, 7> velo_limits;
-        std::copy(velo_limits_vec.begin(), velo_limits_vec.end(), velo_limits.begin()); // convert to array.
-
-        //constants for force feedback
-        std::vector<double> C_q = config["global"]["C_q"].as<std::vector<double>>();
-        std::vector<double> C_v = config["global"]["C_v"].as<std::vector<double>>();
-        std::vector<double> C_y = config["global"]["C_y"].as<std::vector<double>>();
-        std::vector<double> C_f = config["global"]["C_f"].as<std::vector<double>>();
-        std::vector<double> vel_coeff = config["global"]["vel_coeff"].as<std::vector<double>>();
-
-        // contact switch sensitivity
-        const double contact_threshold = config["global"]["contact_threshold"].as<double>();
-
-        //connect to robot and initialize vals
-        franka::Robot robot(config["follower"]["robot"].as<std::string>());
-        shared_robot_state = robot.readOnce();
-        franka::Model model = robot.loadModel();
-
-        // move robot to start
-        const std::array<double, 7>  home_pos = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
-        MotionGenerator motion_generator(0.5, home_pos);
-        robot.control(motion_generator);
-
-        // start sub thread
-        std::thread sub_thread(subThread, std::cref(config));
-        // start pub thread
-        std::thread pub_thread(pubThread, std::cref(config));
-        // start gripper thread
-        std::thread gripper_thread(setGripperWidth, std::cref(config));
-        //key listener thread
-        std::thread key_thread(keyListener);
-
-        // set collision behavior
-        robot.setCollisionBehavior({{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
-                                    {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
-
-        
-        std::ofstream file("output_follower.txt", std::ios::app);
-        if (!file.is_open()) {
-            std::cerr << "Failed to open file\n";
-            return 1;
-        }
-
-        
-        
-
-        // lambda function to compute torques
-        auto computeUnilateralTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
-
-
-            // initialize trqs
-            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-            if (!sub_connected.load()) {
-
-                return torques;
-        
-            };
-
-
-            RobotState::Reader leader_state;
-
-            {
-                std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
-            }
-
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-
-
-            // // limit velocity of joints
-            std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
-            // std::array<double, 7> target_pos = leader_pos;
-
-            // Compute torques
-            for (int i = 0; i < 7; ++i) {
-
-                double vel = joint_vel[i];
-                double pos_error = target_pos[i] - joint_pos[i];
-                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-                
-            };
-
-            
-
-            return torques;
-
-        };
-
-        
-        auto computeBilateralTrqs = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
-
-
-            // initialize trqs
-            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-            if (!sub_connected.load() || control_rob.load() == 'F') {
-
-                return torques;
-        
-            };
-
-
-            RobotState::Reader leader_state;
-
-            {
-                std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
-            }
-
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-            // // limit velocity of joints
-            std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
-            // std::array<double, 7> target_pos = leader_pos;
-
-            // Compute torques
-            for (int i = 0; i < 7; ++i) {
-                double pos_error = target_pos[i] - joint_pos[i];
-                double vel = joint_vel[i];
-                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-            };
-
-            return torques;
-
-        };
-
-        
-        auto computeBilateralTrqs2 = [&](std::array<double, 7>& joint_pos, std::array<double, 7>& joint_vel) {
-
-
-            // initialize trqs
-            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-            if (!sub_connected.load()) {
-
-                return torques;
-        
-            };
-
-
-            RobotState::Reader leader_state;
-
-            {
-                std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
-            }
-
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-            // // limit velocity of joints
-            std::array<double, 7> target_pos = franka::limitRate(velo_limits, leader_pos, joint_pos);
-            // std::array<double, 7> target_pos = leader_pos;
-
-            // Compute torques
-            for (int i = 0; i < 7; ++i) {
-                double pos_error = target_pos[i] - joint_pos[i];
-                double vel = joint_vel[i];
-                torques[i] = (scale * P_gain[i] * pos_error) - (scale * D_gain[i] * vel);
-            };
-
-            return torques;
-
-        };
-
-
-
-        auto computeBilateralWithForceFeedback = [&](const franka::RobotState& robot_state) {
-
-            // initialize trqs
-            std::array<double, 7> torques = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-            // initialize acclerations
-            std::array<double, 7> acc = {0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0};
-
-            if (!sub_connected.load()) {
-
-                return torques;
-        
-            };
-
-            RobotState::Reader leader_state;
-
-            {
-                std::lock_guard<std::mutex> lock(state_mutex);
-                leader_state = shared_leader_state;
-            }
-
-            std::array<double, 7> leader_pos = {
-                leader_state.getJoint1Pos(),
-                leader_state.getJoint2Pos(),
-                leader_state.getJoint3Pos(),
-                leader_state.getJoint4Pos(),
-                leader_state.getJoint5Pos(),
-                leader_state.getJoint6Pos(),
-                leader_state.getJoint7Pos()
-            };
-
-            std::array<double, 7> leader_vel = {
-                leader_state.getJoint1Vel(),
-                leader_state.getJoint2Vel(),
-                leader_state.getJoint3Vel(),
-                leader_state.getJoint4Vel(),
-                leader_state.getJoint5Vel(),
-                leader_state.getJoint6Vel(),
-                leader_state.getJoint7Vel()
-            };
-
-            std::array<double, 7> leader_ext_trq = {
-                leader_state.getJoint1ExtTorque(),
-                leader_state.getJoint2ExtTorque(),
-                leader_state.getJoint3ExtTorque(),
-                leader_state.getJoint4ExtTorque(),
-                leader_state.getJoint5ExtTorque(),
-                leader_state.getJoint6ExtTorque(),
-                leader_state.getJoint7ExtTorque()
-            };
-
-
-            std::array<double, 7> leader_trq = {
-                leader_state.getJoint1Torque(),
-                leader_state.getJoint2Torque(),
-                leader_state.getJoint3Torque(),
-                leader_state.getJoint4Torque(),
-                leader_state.getJoint5Torque(),
-                leader_state.getJoint6Torque(),
-                leader_state.getJoint7Torque()
-            };
-
-            
-            std::array<double, 7> joint_pos = robot_state.q;
-            std::array<double, 7> joint_vel = robot_state.dq;
-            std::array<double, 7> ext_trq = robot_state.tau_J_d;
-
-            // moment of inertia matrix
-            std::array<double, 49> MOI = model.mass(robot_state);
-
-            //coriolis
-            std::array<double, 7> coriolis = model.coriolis(robot_state);
-
-
-            // Compute accelerations
-            for (int i = 0; i < 7; ++i) {
-                double pos_error = joint_pos[i] - leader_pos[i];
-                double vel_error = joint_vel[i] - leader_vel[i];
-                double vel_tot = joint_vel[i] + leader_vel[i];
-                double ext_trq_tot = ext_trq[i] + leader_ext_trq[i];
-                // if ((i == 0) || (i == 1) || (i == 2))   {
-                //     acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                //         - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                // }
-                acc[i] =  - ((C_q[i] / 2) * (pos_error)) - ((C_v[i] / 2) * (vel_error)) 
-                        - ((C_y[i] / 2) * (vel_tot)) - ((C_f[i] / (2 * 1)) * (ext_trq_tot));
-                
-            }
-
-
-            // Compute torques
-            for (int i = 0; i < 7; i++) {
-                // if ((i == 0) || (i == 1) || (i == 2))   {
-                //     for (int j = 0; j < 7; j++) {
-                //         torques[i] += MOI[i*7 + j] * acc[j];
-                //     }
-                //     torques[i] += (vel_coeff[i] * joint_vel[i]);
-                // }
-                for (int j = 0; j < 7; j++) {
-                    torques[i] += MOI[i*7 + j] * acc[j];
-                }
-                torques[i] += (vel_coeff[i] * joint_vel[i]);
-                
-            }
-
-
-            return torques;
-
-        };
-
-
-
-
-
-        // control callback function
-        auto trq_control_callback = [&] (const franka::RobotState& robot_state, franka::Duration period) -> franka::Torques {
-            
-            if (!running.load()) {
-
-                std::cout << "Exiting .... " << std::endl;
-                
-                return franka::MotionFinished(franka::Torques({0, 0, 0, 0, 0, 0, 0}));
-                
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(state_mutex);
-                shared_robot_state = robot_state;
-            }
-
-            // detect contact
-            std::array<double, 7> ext_trq = robot_state.tau_ext_hat_filtered;
-            bool anyOf = std::any_of(ext_trq.begin(), ext_trq.end(), [&contact_threshold](double x){ return std::abs(x) > contact_threshold;});
-            if (anyOf) {
-                control_rob.store('F');
-            };
-
-            std::array<double, 7> joint_pos = robot_state.q;
-            std::array<double, 7> joint_vel = robot_state.dq;
-
-            //write to file
-            file << joint_pos[6] << "," << joint_vel[6] << "," << ext_trq[6] << "\n";
-
-            std::array<double, 7> command_torques = computeBilateralWithForceFeedback(robot_state);
-            //std::array<double, 7> command_torques = computeUnilateralTrqs(joint_pos, joint_vel);
-
-            std::array<double, 7> tau_cmd_rate_limited = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
-
-            return tau_cmd_rate_limited;
-
-        };
-
-
-
-
-        while (running.load()) {
-
-            try {
-
-                //execute control loop
-                robot.control(trq_control_callback);
-
-            } catch (const franka::Exception& ex) {
-
-                // print exception
-                std::cout << ex.what() << std::endl;
-
-                // auto recover
-                robot.automaticErrorRecovery();
-
-            }
-
-        }
-
-        // stop thread
+    termios new_settings = old_settings;
+    new_settings.c_lflag &= ~(ICANON | ECHO);
+    tcsetattr(STDIN_FILENO, TCSANOW, &new_settings);
+
+    const int old_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
+    fcntl(STDIN_FILENO, F_SETFL, old_flags | O_NONBLOCK);
+
+    std::cout << "Running ... Press Q to exit.\n";
+
+    while (running.load(std::memory_order_relaxed))
+    {
+      const int key = getchar();
+      if (key == 'q' || key == 'Q')
+      {
         running.store(false);
-        sub_thread.join();
-        pub_thread.join();
-        key_thread.join();
-
-        file.close();
-
-
-    } catch (const std::exception& ex) {
-
-        std::cerr << "Standard exception: " << ex.what() << std::endl;
-
-        return -1;
-
-    } catch (...) {
-
-        std::cerr << "Unknown exception caught" << std::endl;
-
-        return -1;
-
+        std::cout << "Q pressed.\n";
+        break;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
     }
 
-    return 0;
+    tcsetattr(STDIN_FILENO, TCSANOW, &old_settings);
+    fcntl(STDIN_FILENO, F_SETFL, old_flags);
+  }
 
+  void gripperThread(const YAML::Node &config)
+  {
+    try
+    {
+      franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
+
+      const double close_threshold = config["gripper"]["close_threshold"].as<double>();
+      const double open_threshold = config["gripper"]["open_threshold"].as<double>();
+      const double object_width = config["gripper"]["object_width"].as<double>();
+      const double speed = config["gripper"]["speed"].as<double>();
+      const double gripping_force = config["gripper"]["gripping_force"].as<double>();
+
+      enum class Command
+      {
+        kUnknown,
+        kOpen,
+        kClose
+      };
+      Command previous_command = Command::kUnknown;
+
+      while (running.load(std::memory_order_relaxed))
+      {
+        const franka::GripperState gripper_state = gripper.readOnce();
+
+        double leader_width = 0.08;
+        {
+          std::lock_guard<std::mutex> lock(remote_state_mutex);
+          leader_width = shared_leader_data.gripper_width;
+        }
+        {
+          std::lock_guard<std::mutex> lock(publish_state_mutex);
+          shared_follower_data.gripper_width = gripper_state.width;
+        }
+
+        Command requested_command = previous_command;
+        if (leader_width < close_threshold)
+        {
+          requested_command = Command::kClose;
+        }
+        else if (leader_width >= open_threshold)
+        {
+          requested_command = Command::kOpen;
+        }
+
+        if (requested_command != previous_command)
+        {
+          if (requested_command == Command::kClose &&
+              !gripper_state.is_grasped)
+          {
+            gripper.grasp(object_width, speed, gripping_force, 0.05, 0.05);
+          }
+          else if (requested_command == Command::kOpen)
+          {
+            gripper.move(open_threshold, speed);
+          }
+          previous_command = requested_command;
+        }
+
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+      }
+    }
+    catch (const franka::Exception &exception)
+    {
+      std::cerr << "Follower gripper error: " << exception.what() << '\n';
+      running.store(false);
+    }
+  }
+
+} // namespace end
+
+int main()
+{
+  try
+  {
+    const YAML::Node config = YAML::LoadFile("../teleop_config.yml");
+
+    const std::vector<double> c_q = config["global"]["C_q"].as<std::vector<double>>();
+    const std::vector<double> c_v = config["global"]["C_v"].as<std::vector<double>>();
+    const std::vector<double> c_y = config["global"]["C_y"].as<std::vector<double>>();
+    const std::vector<double> c_f = config["global"]["C_f"].as<std::vector<double>>();
+
+    if (c_q.size() != kJointCount || c_v.size() != kJointCount ||
+        c_y.size() != kJointCount || c_f.size() != kJointCount)
+    {
+      throw std::runtime_error("C_q, C_v, C_y, and C_f must each contain 7 values");
+    }
+
+    const int stale_timeout_ms =
+        readOptionalInt(config, "global", "stale_packet_timeout_ms", 100);
+    const std::int64_t stale_timeout_ns =
+        static_cast<std::int64_t>(stale_timeout_ms) * 1'000'000LL;
+
+    // Disturbance-observer parameters. Start conservatively and tune gradually.
+    const double g_dob = readOptionalDouble(config, "global", "g_dob", 50.0);
+    const double dob_gain = readOptionalDouble(config, "global", "dob_gain", 1);
+    const double max_dob_torque = readOptionalDouble(config, "global", "max_dob_torque", 50.0);
+
+    if (!(g_dob > 0.0) || !(dob_gain >= 0.0) ||
+        !(max_dob_torque > 0.0))
+    {
+      throw std::runtime_error(
+          "g_dob and max_dob_torque must be positive, and dob_gain must be non-negative");
+    }
+
+    franka::Robot robot(config["follower"]["robot"].as<std::string>());
+    const franka::Model model = robot.loadModel();
+
+    const std::array<double, kJointCount> home_position = {
+        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
+    MotionGenerator motion_generator(0.5, home_position);
+    robot.control(motion_generator);
+
+    robot.setCollisionBehavior(
+        {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+        {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+        {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}},
+        {{100.0, 100.0, 100.0, 100.0, 100.0, 100.0}});
+
+    const franka::RobotState initial_state = robot.readOnce();
+    {
+      std::lock_guard<std::mutex> lock(publish_state_mutex);
+      shared_follower_data.pos = initial_state.theta;
+      shared_follower_data.vel.fill(0.0);
+      shared_follower_data.trq = initial_state.tau_J;
+      shared_follower_data.ext_trq = initial_state.tau_ext_hat_filtered;
+      shared_follower_data.trq_der = initial_state.dtau_J;
+    }
+
+    std::thread subscriber(subscriberThread, std::cref(config));
+    std::thread publisher(publisherThread, std::cref(config));
+    std::thread gripper(gripperThread, std::cref(config));
+    std::thread keyboard(keyListener);
+
+    RemoteRobotData cached_leader_data;
+
+    // Persistent state of the DOB.
+    std::array<double, kJointCount> dob_lpf_output{};
+    std::array<bool, kJointCount> dob_initialized{};
+
+    // Persistent state for velocity obtained by differentiating joint position.
+    std::array<double, kJointCount> previous_position = initial_state.theta;
+    std::array<double, kJointCount> differentiated_velocity{};
+    bool differentiator_initialized = false;
+
+    const auto torque_callback = [&](const franka::RobotState &robot_state, franka::Duration period) -> franka::Torques
+    {
+      if (!running.load(std::memory_order_relaxed))
+      {
+        return franka::MotionFinished(
+            franka::Torques({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
+      }
+
+      // The first callback can report a zero period; use 1 ms in that case.
+      const double measured_dt = period.toSec();
+      const double dt =
+          (std::isfinite(measured_dt) && measured_dt > 0.0 &&
+           measured_dt <= 0.01)
+              ? measured_dt
+              : 0.001;
+
+      // velocity estimate
+      if (!differentiator_initialized)
+      {
+        previous_position = robot_state.theta;
+        differentiated_velocity.fill(0.0);
+        differentiator_initialized = true;
+      }
+      else
+      {
+        for (std::size_t i = 0; i < kJointCount; ++i)
+        {
+          differentiated_velocity[i] = (robot_state.theta[i] - previous_position[i]) / dt;
+          previous_position[i] = robot_state.theta[i];
+        }
+      }
+
+      // Never block the 1 kHz callback on a publisher thread.
+      if (publish_state_mutex.try_lock())
+      {
+        shared_follower_data.pos = robot_state.theta;
+        shared_follower_data.vel = differentiated_velocity;
+        shared_follower_data.trq = robot_state.tau_J;
+        shared_follower_data.ext_trq = robot_state.tau_ext_hat_filtered;
+        shared_follower_data.trq_der = robot_state.dtau_J;
+        publish_state_mutex.unlock();
+      }
+
+      std::array<double, kJointCount> command_torques{};
+
+      if (!sub_connected.load(std::memory_order_acquire))
+      {
+        return command_torques;
+      }
+
+      const std::int64_t packet_age_ns =
+          nowNanoseconds() - last_rx_ns.load(std::memory_order_acquire);
+      if (packet_age_ns < 0 || packet_age_ns > stale_timeout_ns)
+      {
+        sub_connected.store(false, std::memory_order_release);
+        return command_torques;
+      }
+
+      // Never wait for the UDP thread. Reuse the last complete snapshot if busy.
+      if (remote_state_mutex.try_lock())
+      {
+        cached_leader_data = shared_leader_data;
+        remote_state_mutex.unlock();
+      }
+
+      const std::array<double, 49> mass_matrix = model.mass(robot_state);
+      std::array<double, kJointCount> desired_acceleration{};
+
+      for (std::size_t i = 0; i < kJointCount; ++i)
+      {
+        const double position_error =
+            robot_state.theta[i] - cached_leader_data.pos[i];
+        const double velocity_error =
+            differentiated_velocity[i] - cached_leader_data.vel[i];
+
+#ifdef TELEOP_BILATERAL
+
+        const double velocity_sum = differentiated_velocity[i] + cached_leader_data.vel[i];
+
+        const double external_torque_sum = robot_state.tau_ext_hat_filtered[i] + cached_leader_data.ext_trq[i];
+
+        desired_acceleration[i] =
+            -(c_q[i] / 2.0) * position_error -
+            (c_v[i] / 2.0) * velocity_error -
+            (c_y[i] / 2.0) * velocity_sum -
+            (c_f[i] / 2.0) * external_torque_sum;
+
+        const double nominal_inertia = mass_matrix[i * kJointCount + i];
+
+        const double nominal_torque = nominal_inertia * desired_acceleration[i];
+
+        const double omega = differentiated_velocity[i];
+
+        if (!dob_initialized[i])
+        {
+          dob_lpf_output[i] = nominal_inertia * g_dob * omega;
+          dob_initialized[i] = true;
+        }
+
+        const double dob_input = nominal_torque + nominal_inertia * g_dob * omega;
+
+        const double lpf_output = (1.0 / (g_dob * dt + 1.0)) * (dob_lpf_output[i] + g_dob * dt * dob_input);
+
+        double tau_dis_hat = lpf_output - nominal_inertia * g_dob * omega;
+
+        tau_dis_hat = std::clamp(tau_dis_hat, -max_dob_torque, max_dob_torque);
+
+        command_torques[i] = nominal_torque + dob_gain * tau_dis_hat;
+
+        dob_lpf_output[i] = lpf_output;
+
+#elif defined(TELEOP_UNILATERAL)
+
+        desired_acceleration[i] = -c_q[i] * position_error - c_v[i] * velocity_error;
+
+        const double nominal_inertia = mass_matrix[i * kJointCount + i];
+
+        command_torques[i] = nominal_inertia * desired_acceleration[i];
+
+#else
+#error "A teleoperation mode must be selected"
+#endif
+      }
+
+      const std::array<double, kJointCount> rate_limited_torques =
+          franka::limitRate(franka::kMaxTorqueRate, command_torques,
+                            robot_state.tau_J_d);
+      return rate_limited_torques;
+    };
+
+    while (running.load(std::memory_order_relaxed))
+    {
+      try
+      {
+        robot.control(torque_callback);
+      }
+      catch (const franka::Exception &exception)
+      {
+        std::cerr << exception.what() << '\n';
+        if (!running.load(std::memory_order_relaxed))
+        {
+          break;
+        }
+        robot.automaticErrorRecovery();
+      }
+    }
+
+    running.store(false);
+
+    if (subscriber.joinable())
+      subscriber.join();
+    if (publisher.joinable())
+      publisher.join();
+    if (gripper.joinable())
+      gripper.join();
+    if (keyboard.joinable())
+      keyboard.join();
+  }
+  catch (const std::exception &exception)
+  {
+    running.store(false);
+    std::cerr << "Exception: " << exception.what() << '\n';
+    return -1;
+  }
+  catch (...)
+  {
+    running.store(false);
+    std::cerr << "Unknown exception caught\n";
+    return -1;
+  }
+
+  return 0;
 }

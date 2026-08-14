@@ -20,12 +20,16 @@ find_package(Eigen3 REQUIRED)
 # find_package(Franka REQUIRED)
 
 # use libfarnka 0.9.2
+# set(Franka_DIR "/home/johnkiran/libfranka0.9.2/libfranka/build")
+# find_package(Franka REQUIRED)
+
+# use libfarnka 0.9.2
 set(Franka_DIR "/home/johnkiran/libfranka0.9.2/libfranka/build")
 find_package(Franka REQUIRED)
 
 # use libfarnka 0.18.0
-# set(FRANKA_ROOT /home/johnkiran/libfranka/build)
-# find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
+set(FRANKA_ROOT "/home/johnkiran/libfranka/build")
+find_package(Franka REQUIRED PATHS ${FRANKA_ROOT} NO_DEFAULT_PATH)
 
 
 # generate capnp files
@@ -33,7 +37,7 @@ capnp_generate_cpp(CAPNP_SRCS CAPNP_HDRS messages/robot-state.capnp)
 # Add the directory containing .capnp.h to the include path
 include_directories(${CMAKE_CURRENT_BINARY_DIR})
 # include franka examples directory
-include_directories(${CMAKE_SOURCE_DIR}/franka_examples)
+include_directories(${CMAKE_SOURCE_DIR}/utils)
 # include Eigen3
 include_directories(${EIGEN3_INCLUDE_DIR})
 
@@ -45,14 +49,50 @@ configure_file(
 )
 
 
-add_executable(follower
-            follower.cpp
-            franka_examples/examples_common.cpp
+# compile the utils library
+add_library(utils
+    utils/examples_common.cpp
+    utils/VelocityObserver.cpp
+)
+target_include_directories(utils PUBLIC
+    ${CMAKE_SOURCE_DIR}/utils
+)
+target_link_libraries(utils
+    Franka::Franka
+)
+
+
+set(LEADER_SOURCE leader_optimized_dob_velocity.cpp)
+set(FOLLOWER_SOURCE follower_optimized_dob_velocity.cpp)
+
+
+#unilateral executables
+add_executable(leader_unilateral
+            ${LEADER_SOURCE}
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
+target_compile_definitions(
+    leader_unilateral
+    PRIVATE TELEOP_UNILATERAL
+)
+target_link_libraries(leader_unilateral
+    utils
+    Franka::Franka
+    CapnProto::capnp
+    CapnProto::kj
+    yaml-cpp
+)
 
-# Link libraries
-target_link_libraries(follower
+add_executable(follower_unilateral
+            ${FOLLOWER_SOURCE}
+            ${CAPNP_SRCS}
+            ${CAPNP_HDRS})
+target_compile_definitions(
+    follower_unilateral
+    PRIVATE TELEOP_UNILATERAL
+)
+target_link_libraries(follower_unilateral
+    utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj
@@ -60,14 +100,33 @@ target_link_libraries(follower
 )
 
 
-add_executable(leader 
-            leader.cpp
-            franka_examples/examples_common.cpp
+#bilateral executables
+add_executable(leader_bilateral
+            ${LEADER_SOURCE}
             ${CAPNP_SRCS}
             ${CAPNP_HDRS})
+target_compile_definitions(
+    leader_bilateral
+    PRIVATE TELEOP_BILATERAL
+)
+target_link_libraries(leader_bilateral
+    utils
+    Franka::Franka
+    CapnProto::capnp
+    CapnProto::kj
+    yaml-cpp
+)
 
-# Link libraries
-target_link_libraries(leader
+add_executable(follower_bilateral
+            ${FOLLOWER_SOURCE}
+            ${CAPNP_SRCS}
+            ${CAPNP_HDRS})
+target_compile_definitions(
+    follower_bilateral
+    PRIVATE TELEOP_BILATERAL
+)
+target_link_libraries(follower_bilateral
+    utils
     Franka::Franka
     CapnProto::capnp
     CapnProto::kj

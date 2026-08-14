@@ -62,8 +62,8 @@ target_link_libraries(utils
 )
 
 
-set(LEADER_SOURCE leader_optimized_dob_velocity.cpp)
-set(FOLLOWER_SOURCE follower_optimized_dob_velocity.cpp)
+set(LEADER_SOURCE leader.cpp)
+set(FOLLOWER_SOURCE follower.cpp)
 
 
 #unilateral executables

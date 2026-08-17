@@ -99,6 +99,14 @@ std::atomic<bool> recording{false};
   std::atomic<bool> sub_connected{false};
   std::atomic<std::int64_t> last_rx_ns{0};
 
+  enum class GripperCommand
+  {
+    kNone,
+    kOpen,
+    kClose
+  };
+  std::atomic<GripperCommand> gripper_command{GripperCommand::kNone};
+
   std::int64_t nowNanoseconds()
   {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -520,17 +528,32 @@ void keyListener() {
     const int old_flags = fcntl(STDIN_FILENO, F_GETFL, 0);
     fcntl(STDIN_FILENO, F_SETFL, old_flags | O_NONBLOCK);
 
-  std::cout << "Running ... Press R to start/stop recording, Q to exit.\n";
+    std::cout << "Running ... "
+            << "C = close grippers, "
+            << "O = open grippers, "
+            << "R = recording, "
+            << "Q = exit.\n";
 
     while (running.load(std::memory_order_relaxed))
     {
       const int key = getchar();
-    if (key == 'r' || key == 'R') {
-      const bool new_state = !recording.load(std::memory_order_relaxed);
-      recording.store(new_state, std::memory_order_release);
-      std::cout << (new_state ? "Recording requested.\n"
-                              : "Stop recording requested.\n");
-    } else if (key == 'q' || key == 'Q') {
+      if (key == 'c' || key == 'C')
+      {
+        gripper_command.store(GripperCommand::kClose, std::memory_order_release);
+        std::cout << "Close grippers requested.\n";
+      }
+      else if (key == 'o' || key == 'O')
+      {
+        gripper_command.store(GripperCommand::kOpen, std::memory_order_release);
+        std::cout << "Open grippers requested.\n";
+      }
+      else if (key == 'r' || key == 'R') {
+        const bool new_state = !recording.load(std::memory_order_relaxed);
+        recording.store(new_state, std::memory_order_release);
+        std::cout << (new_state ? "Recording requested.\n" : "Stop recording requested.\n");
+      } 
+      else if (key == 'q' || key == 'Q') 
+      {
         running.store(false);
         std::cout << "Q pressed.\n";
         break;
@@ -542,30 +565,68 @@ void keyListener() {
     fcntl(STDIN_FILENO, F_SETFL, old_flags);
   }
 
-  void gripperThread(const YAML::Node &config)
-  {
+
+  void gripperThread(const YAML::Node &config) {
+
     try
     {
       franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
+      const double open_width = config["gripper"]["open_threshold"].as<double>();
+      const double close_width = 0.0;
+      const double speed = config["gripper"]["speed"].as<double>();
 
       while (running.load(std::memory_order_relaxed))
       {
+        const GripperCommand command = gripper_command.exchange(GripperCommand::kNone, std::memory_order_acq_rel);
+
+        if (command == GripperCommand::kClose)
+        {
+          std::cout << "Closing leader gripper...\n";
+
+          const bool success = gripper.move(close_width, speed);
+
+          if (!success)
+          {
+            std::cerr << "Leader gripper close failed.\n";
+          }
+        }
+        else if (command == GripperCommand::kOpen)
+        {
+          std::cout << "Opening leader gripper...\n";
+
+          const bool success =
+              gripper.move(open_width, speed);
+
+          if (!success)
+          {
+            std::cerr << "Leader gripper open failed.\n";
+          }
+        }
+
         const franka::GripperState gripper_state = gripper.readOnce();
+
         {
           std::lock_guard<std::mutex> lock(publish_state_mutex);
-          shared_leader_data.gripper_width = gripper_state.width;
+          shared_leader_data.gripper_width =
+              gripper_state.width;
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(20));
       }
     }
     catch (const franka::Exception &exception)
     {
-      std::cerr << "Leader gripper error: " << exception.what() << '\n';
+      std::cerr << "Leader gripper error: "
+                << exception.what() << '\n';
+
       running.store(false);
     }
   }
 
+
 } // namespace end
+
 
 int main()
 {

@@ -55,7 +55,7 @@ namespace
     std::array<double, kJointCount> trq{};
     std::array<double, kJointCount> trq_der{};
     double time = 0.0;
-    double gripper_width = 0.0;
+    double gripper_width = 0.1;
   };
 
   struct PublishedRobotData
@@ -65,7 +65,7 @@ namespace
     std::array<double, kJointCount> ext_trq{};
     std::array<double, kJointCount> trq{};
     std::array<double, kJointCount> trq_der{};
-    double gripper_width = 0.08;
+    double gripper_width = 0.1;
   };
 
 struct RecordSample {
@@ -593,7 +593,7 @@ int main()
     const double g_dob =
         readOptionalDouble(config, "global", "g_dob", 50.0);
     const double dob_gain =
-        readOptionalDouble(config, "global", "dob_gain", 1);
+        readOptionalDouble(config, "disturbance_observer", "dob_gain", 0.1);
     const double max_dob_torque =
         readOptionalDouble(config, "global", "max_dob_torque", 50.0);
 
@@ -607,9 +607,8 @@ int main()
     franka::Robot robot(config["leader"]["robot"].as<std::string>());
     const franka::Model model = robot.loadModel();
 
-    const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
-    MotionGenerator motion_generator(0.5, home_position);
+    const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+    MotionGenerator motion_generator(0.25, home_position);
     robot.control(motion_generator);
 
     robot.setCollisionBehavior(

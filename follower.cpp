@@ -72,6 +72,18 @@ namespace
   std::atomic<bool> sub_connected{false};
   std::atomic<std::int64_t> last_rx_ns{0};
 
+  enum class GripperCommand
+  {
+    kNone,
+    kOpen,
+    kClose
+  };
+
+  std::atomic<GripperCommand> gripper_command{GripperCommand::kNone};
+
+  constexpr uint8_t kGripperOpenCommand = 1;
+  constexpr uint8_t kGripperCloseCommand = 2;
+
   std::int64_t nowNanoseconds()
   {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -377,70 +389,211 @@ namespace
     fcntl(STDIN_FILENO, F_SETFL, old_flags);
   }
 
+
   void gripperThread(const YAML::Node &config)
   {
     try
     {
-      franka::Gripper gripper(config["follower"]["robot"].as<std::string>());
+      franka::Gripper gripper(
+          config["follower"]["robot"].as<std::string>());
 
-      const double close_threshold = config["gripper"]["close_threshold"].as<double>();
-      const double open_threshold = config["gripper"]["open_threshold"].as<double>();
-      const double object_width = config["gripper"]["object_width"].as<double>();
-      const double speed = config["gripper"]["speed"].as<double>();
-      const double gripping_force = config["gripper"]["gripping_force"].as<double>();
+      const double open_threshold =
+          config["gripper"]["open_threshold"].as<double>();
 
-      enum class Command
-      {
-        kUnknown,
-        kOpen,
-        kClose
-      };
-      Command previous_command = Command::kUnknown;
+      const double object_width =
+          config["gripper"]["object_width"].as<double>();
+
+      const double speed =
+          config["gripper"]["speed"].as<double>();
+
+      const double gripping_force =
+          config["gripper"]["gripping_force"].as<double>();
+
+      GripperCommand last_command = GripperCommand::kNone;
 
       while (running.load(std::memory_order_relaxed))
       {
         const franka::GripperState gripper_state = gripper.readOnce();
 
-        double leader_width = 0.08;
-        {
-          std::lock_guard<std::mutex> lock(remote_state_mutex);
-          leader_width = shared_leader_data.gripper_width;
-        }
         {
           std::lock_guard<std::mutex> lock(publish_state_mutex);
           shared_follower_data.gripper_width = gripper_state.width;
         }
 
-        Command requested_command = previous_command;
-        if (leader_width < close_threshold)
+        const GripperCommand command = gripper_command.load(std::memory_order_acquire);
+        if (command != last_command &&
+            command != GripperCommand::kNone)
         {
-          requested_command = Command::kClose;
-        }
-        else if (leader_width >= open_threshold)
-        {
-          requested_command = Command::kOpen;
+          if (command == GripperCommand::kClose)
+          {
+            std::cout
+                << "Closing follower gripper...\n";
+
+            if (!gripper_state.is_grasped)
+            {
+              const bool success =
+                  gripper.grasp(
+                      object_width,
+                      speed,
+                      gripping_force,
+                      0.05,
+                      0.05);
+
+              if (!success)
+              {
+                std::cerr
+                    << "Follower gripper close failed.\n";
+              }
+            }
+          }
+          else if (command == GripperCommand::kOpen)
+          {
+            std::cout
+                << "Opening follower gripper...\n";
+
+            const bool success =
+                gripper.move(open_threshold, speed);
+
+            if (!success)
+            {
+              std::cerr
+                  << "Follower gripper open failed.\n";
+            }
+          }
+
+          last_command = command;
         }
 
-        if (requested_command != previous_command)
-        {
-          if (requested_command == Command::kClose &&
-              !gripper_state.is_grasped)
-          {
-            gripper.grasp(object_width, speed, gripping_force, 0.05, 0.05);
-          }
-          else if (requested_command == Command::kOpen)
-          {
-            gripper.move(open_threshold, speed);
-          }
-          previous_command = requested_command;
-        }
-
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        std::this_thread::sleep_for(
+            std::chrono::milliseconds(20));
       }
     }
     catch (const franka::Exception &exception)
     {
-      std::cerr << "Follower gripper error: " << exception.what() << '\n';
+      std::cerr
+          << "Follower gripper error: "
+          << exception.what() << '\n';
+
+      running.store(false);
+    }
+  }
+
+
+
+  void gripperCommandListener(const YAML::Node& config)
+  {
+    try
+    {
+      const int port =
+          config["gripper"]["gripper_port"].as<int>();
+
+      const int socket_fd =
+          socket(AF_INET, SOCK_DGRAM, 0);
+
+      if (socket_fd < 0)
+      {
+        perror("Follower gripper command socket creation failed");
+        running.store(false);
+        return;
+      }
+
+      const int receive_timeout_ms = readOptionalInt(config, "global", "udp_receive_timeout_ms", 100);
+      try
+      {
+        setReceiveTimeout(socket_fd, receive_timeout_ms);
+      }
+      catch (const std::exception &exception)
+      {
+        std::cerr << exception.what() << '\n';
+        close(socket_fd);
+        running.store(false);
+        return;
+      }
+
+      sockaddr_in receive_address{};
+      receive_address.sin_family = AF_INET;
+      receive_address.sin_port = htons(port);
+      receive_address.sin_addr.s_addr = INADDR_ANY;
+
+      if (bind(socket_fd,
+              reinterpret_cast<sockaddr*>(&receive_address),
+              sizeof(receive_address)) < 0)
+      {
+        perror("Follower gripper command socket bind failed");
+        close(socket_fd);
+        running.store(false);
+        return;
+      }
+
+      std::cout
+          << "Gripper command listener on port: "
+          << port << '\n';
+
+      uint8_t command_byte = 0;
+
+      constexpr auto kGripperCommandCooldown = std::chrono::milliseconds(200);
+      auto last_command_time = Clock::now() - kGripperCommandCooldown;
+
+      while (running.load(std::memory_order_relaxed))
+      {
+        const ssize_t received =
+            recvfrom(socket_fd,
+                    &command_byte,
+                    sizeof(command_byte),
+                    0,
+                    nullptr,
+                    nullptr);
+
+        if (received < 0)
+        {
+          if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)
+          {
+            continue;
+          }
+          if (running.load(std::memory_order_relaxed))
+          {
+            perror("Follower gripper command receive failed");
+          }
+
+          break;
+        }
+
+        if (received != sizeof(command_byte))
+        {
+          continue;
+        }
+
+        auto const time_now = Clock::now();
+        if (time_now - last_command_time < kGripperCommandCooldown) continue;
+
+        if (command_byte == kGripperCloseCommand)
+        {
+          gripper_command.store(
+              GripperCommand::kClose,
+              std::memory_order_release);
+
+          std::cout
+              << "Follower received CLOSE command.\n";
+        }
+        else if (command_byte == kGripperOpenCommand)
+        {
+          gripper_command.store(
+              GripperCommand::kOpen,
+              std::memory_order_release);
+
+          std::cout
+              << "Follower received OPEN command.\n";
+        }
+      }
+
+      close(socket_fd);
+    }
+    catch (const std::exception &exception)
+    {
+      std::cerr
+          << "Follower gripper command listener error: "
+          << exception.what() << '\n';
+
       running.store(false);
     }
   }
@@ -469,7 +622,6 @@ int main()
     const std::int64_t stale_timeout_ns =
         static_cast<std::int64_t>(stale_timeout_ms) * 1'000'000LL;
 
-    // Disturbance-observer parameters. Start conservatively and tune gradually.
     const double g_dob = readOptionalDouble(config, "global", "g_dob", 50.0);
     const double dob_gain = readOptionalDouble(config, "global", "dob_gain", 1);
     const double max_dob_torque = readOptionalDouble(config, "global", "max_dob_torque", 50.0);
@@ -485,8 +637,8 @@ int main()
     const franka::Model model = robot.loadModel();
 
     const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
-    MotionGenerator motion_generator(0.5, home_position);
+        0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+    MotionGenerator motion_generator(0.20, home_position);
     robot.control(motion_generator);
 
     robot.setCollisionBehavior(
@@ -508,15 +660,14 @@ int main()
     std::thread subscriber(subscriberThread, std::cref(config));
     std::thread publisher(publisherThread, std::cref(config));
     std::thread gripper(gripperThread, std::cref(config));
+    std::thread gripper_command_listener(gripperCommandListener, std::cref(config));
     std::thread keyboard(keyListener);
 
     RemoteRobotData cached_leader_data;
 
-    // Persistent state of the DOB.
     std::array<double, kJointCount> dob_lpf_output{};
     std::array<bool, kJointCount> dob_initialized{};
 
-    // Persistent state for velocity obtained by differentiating joint position.
     std::array<double, kJointCount> previous_position = initial_state.theta;
     std::array<double, kJointCount> differentiated_velocity{};
     bool differentiator_initialized = false;
@@ -529,7 +680,6 @@ int main()
             franka::Torques({0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0}));
       }
 
-      // The first callback can report a zero period; use 1 ms in that case.
       const double measured_dt = period.toSec();
       const double dt =
           (std::isfinite(measured_dt) && measured_dt > 0.0 &&
@@ -553,7 +703,6 @@ int main()
         }
       }
 
-      // Never block the 1 kHz callback on a publisher thread.
       if (publish_state_mutex.try_lock())
       {
         shared_follower_data.pos = robot_state.theta;
@@ -579,7 +728,6 @@ int main()
         return command_torques;
       }
 
-      // Never wait for the UDP thread. Reuse the last complete snapshot if busy.
       if (remote_state_mutex.try_lock())
       {
         cached_leader_data = shared_leader_data;
@@ -676,6 +824,8 @@ int main()
       publisher.join();
     if (gripper.joinable())
       gripper.join();
+    if (gripper_command_listener.joinable())
+      gripper_command_listener.join();
     if (keyboard.joinable())
       keyboard.join();
   }

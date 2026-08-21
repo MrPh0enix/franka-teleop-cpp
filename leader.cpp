@@ -107,6 +107,9 @@ std::atomic<bool> recording{false};
   };
   std::atomic<GripperCommand> gripper_command{GripperCommand::kNone};
 
+  constexpr uint8_t kGripperOpenCommand = 1;
+  constexpr uint8_t kGripperCloseCommand = 2;
+
   std::int64_t nowNanoseconds()
   {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -509,10 +512,56 @@ void publisherThread(const YAML::Node& config) {
     close(socket_fd);
   }
 
+  bool sendGripperCommand(const YAML::Node& config, uint8_t command)
+  {
+    const std::string follower_ip =
+        config["follower"]["ip"].as<std::string>();
 
+    const int port = config["gripper"]["gripper_port"].as<int>();
 
-// Key listener function
-void keyListener() {
+    const int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (socket_fd < 0)
+    {
+      perror("Gripper command socket creation failed");
+      return false;
+    }
+
+    sockaddr_in send_address{};
+    send_address.sin_family = AF_INET;
+    send_address.sin_port = htons(port);
+
+    if (inet_pton(AF_INET,
+                  follower_ip.c_str(),
+                  &send_address.sin_addr) != 1)
+    {
+      std::cerr << "Invalid follower IP address: "
+                << follower_ip << '\n';
+
+      close(socket_fd);
+      return false;
+    }
+
+    const ssize_t sent =
+        sendto(socket_fd,
+              &command,
+              sizeof(command),
+              0,
+              reinterpret_cast<sockaddr*>(&send_address),
+              sizeof(send_address));
+
+    close(socket_fd);
+
+    if (sent != sizeof(command))
+    {
+      perror("Failed to send gripper command");
+      return false;
+    }
+
+    return true;
+  }
+
+  void keyListener(const YAML::Node& config) {
     termios old_settings{};
     if (tcgetattr(STDIN_FILENO, &old_settings) != 0)
     {
@@ -537,22 +586,51 @@ void keyListener() {
     while (running.load(std::memory_order_relaxed))
     {
       const int key = getchar();
+
       if (key == 'c' || key == 'C')
       {
-        gripper_command.store(GripperCommand::kClose, std::memory_order_release);
-        std::cout << "Close grippers requested.\n";
+        // Local leader gripper command
+        gripper_command.store(
+            GripperCommand::kClose,
+            std::memory_order_release);
+
+        if (sendGripperCommand(config, kGripperCloseCommand))
+        {
+          std::cout << "Close command sent to follower.\n";
+        }
+        else
+        {
+          std::cerr << "Failed to send close command to follower.\n";
+        }
       }
       else if (key == 'o' || key == 'O')
       {
-        gripper_command.store(GripperCommand::kOpen, std::memory_order_release);
-        std::cout << "Open grippers requested.\n";
+        // Local leader gripper command
+        gripper_command.store(
+            GripperCommand::kOpen,
+            std::memory_order_release);
+
+        if (sendGripperCommand(config, kGripperOpenCommand))
+        {
+          std::cout << "Open command sent to follower.\n";
+        }
+        else
+        {
+          std::cerr << "Failed to send open command to follower.\n";
+        }
       }
-      else if (key == 'r' || key == 'R') {
+      else if (key == 'r' || key == 'R')
+      {
         const bool new_state = !recording.load(std::memory_order_relaxed);
+
         recording.store(new_state, std::memory_order_release);
-        std::cout << (new_state ? "Recording requested.\n" : "Stop recording requested.\n");
-      } 
-      else if (key == 'q' || key == 'Q') 
+
+        std::cout
+            << (new_state
+                    ? "Recording requested.\n"
+                    : "Stop recording requested.\n");
+      }
+      else if (key == 'q' || key == 'Q')
       {
         running.store(false);
         std::cout << "Q pressed.\n";
@@ -566,47 +644,66 @@ void keyListener() {
   }
 
 
-  void gripperThread(const YAML::Node &config) {
-
+  void gripperThread(const YAML::Node &config)
+  {
     try
     {
-      franka::Gripper gripper(config["leader"]["robot"].as<std::string>());
-      const double open_width = config["gripper"]["open_threshold"].as<double>();
+      franka::Gripper gripper(
+          config["leader"]["robot"].as<std::string>());
+
+      const double open_width =
+          config["gripper"]["open_threshold"].as<double>();
+
       const double close_width = 0.0;
-      const double speed = config["gripper"]["speed"].as<double>();
+
+      const double speed =
+          config["gripper"]["speed"].as<double>();
+
+      GripperCommand last_command =
+          GripperCommand::kNone;
 
       while (running.load(std::memory_order_relaxed))
       {
-        const GripperCommand command = gripper_command.exchange(GripperCommand::kNone, std::memory_order_acq_rel);
+        const GripperCommand command =
+            gripper_command.load(std::memory_order_acquire);
 
-        if (command == GripperCommand::kClose)
+        if (command != last_command && command != GripperCommand::kNone)
         {
-          std::cout << "Closing leader gripper...\n";
-
-          const bool success = gripper.move(close_width, speed);
-
-          if (!success)
+          if (command == GripperCommand::kClose)
           {
-            std::cerr << "Leader gripper close failed.\n";
+            std::cout << "Closing leader gripper...\n";
+
+            const bool success =
+                gripper.move(close_width, speed);
+
+            if (!success)
+            {
+              std::cerr
+                  << "Leader gripper close failed.\n";
+            }
           }
-        }
-        else if (command == GripperCommand::kOpen)
-        {
-          std::cout << "Opening leader gripper...\n";
-
-          const bool success =
-              gripper.move(open_width, speed);
-
-          if (!success)
+          else if (command == GripperCommand::kOpen)
           {
-            std::cerr << "Leader gripper open failed.\n";
-          }
-        }
+            std::cout << "Opening leader gripper...\n";
 
-        const franka::GripperState gripper_state = gripper.readOnce();
+            const bool success =
+                gripper.move(open_width, speed);
+
+            if (!success)
+            {
+              std::cerr
+                  << "Leader gripper open failed.\n";
+            }
+          }
+          last_command = command;
+        }
+        const franka::GripperState gripper_state =
+            gripper.readOnce();
 
         {
-          std::lock_guard<std::mutex> lock(publish_state_mutex);
+          std::lock_guard<std::mutex> lock(
+              publish_state_mutex);
+
           shared_leader_data.gripper_width =
               gripper_state.width;
         }
@@ -623,7 +720,6 @@ void keyListener() {
       running.store(false);
     }
   }
-
 
 } // namespace end
 
@@ -669,8 +765,8 @@ int main()
     const franka::Model model = robot.loadModel();
 
     const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
-    MotionGenerator motion_generator(0.5, home_position);
+        0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
+    MotionGenerator motion_generator(0.20, home_position);
     robot.control(motion_generator);
 
     robot.setCollisionBehavior(
@@ -693,7 +789,7 @@ int main()
     std::thread subscriber(subscriberThread, std::cref(config));
     std::thread gripper(gripperThread, std::cref(config));
     std::thread recorder(recorderThread);
-    std::thread keyboard(keyListener);
+    std::thread keyboard(keyListener, std::cref(config));
 
     RemoteRobotData cached_follower_data;
 

@@ -3,7 +3,7 @@ FROM ubuntu:24.04
 
 
 ARG USERNAME=dev
-ARG USER_UID=1000
+ARG USER_UID=1005
 ARG USER_GID=${USER_UID}
 
 ARG LIBFRANKA_VERSION=0.9.2 # change this to your required franka version
@@ -30,8 +30,7 @@ RUN apt-get update && apt-get install -y \
 
 # create non root user
 RUN EXISTING_USER="$(getent passwd ${USER_UID} | cut -d: -f1)" && \
-    if [ -n "${EXISTING_USER}" ]; then \
-        echo "UID ${USER_UID} already exists as ${EXISTING_USER}"; \
+    if [ -n "${EXISTING_USER}" ]; then echo "UID ${USER_UID} already exists as ${EXISTING_USER}"; \
         if [ "${EXISTING_USER}" != "${USERNAME}" ]; then \
             usermod --login ${USERNAME} "${EXISTING_USER}"; \
             usermod --home /home/${USERNAME} --move-home ${USERNAME}; \

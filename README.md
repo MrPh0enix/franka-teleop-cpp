@@ -1,75 +1,160 @@
 # Franka Teleop C++
 
-This repository contains a C++ teleoperation framework for Franka Emika Panda robots, with separate leader and follower executables connected over UDP using Cap'n Proto messages. It also includes a Python ProMP (Probabilistic Movement Primitives) workspace for motion generation and trajectory learning.
+This repository contains a C++ teleoperation framework for Franka Emika
+Panda robots, with separate leader and follower executables connected
+over UDP using Cap'n Proto messages. It also includes a Python ProMP
+(Probabilistic Movement Primitives) workspace for motion generation and
+trajectory learning.
 
 ## What this project does
 
-- Runs a leader-side robot controller that publishes robot state.
-- Runs a follower-side controller that subscribes to the leader state and mirrors the motion.
-- Uses YAML-based configuration for robot IPs, ports, gains, and safety settings.
-- Includes a Python-based ProMP implementation for learning and replaying motion primitives.
+-   Runs a leader-side robot controller that publishes robot state.
+-   Runs a follower-side controller that subscribes to the leader state
+    and mirrors the motion.
+-   Supports bilateral and unilateral teleoperation modes.
+-   Uses YAML-based configuration for robot IPs, ports, gains, and
+    safety settings.
+-   Includes a Python-based ProMP implementation for learning and
+    replaying motion primitives.
 
 ## Repository layout
 
-- [CMakeLists.txt](CMakeLists.txt) — CMake build definition for the C++ components.
-- [leader.cpp](leader.cpp) — Leader-side teleoperation node.
-- [follower.cpp](follower.cpp) — Follower-side teleoperation node.
-- [teleop_config.yml](teleop_config.yml) — Runtime configuration for networking and controller parameters.
-- [messages/robot-state.capnp](messages/robot-state.capnp) — Cap'n Proto schema for robot-state messages.
-- [ProMP/](ProMP/) — Python scripts related to ProMP-based motion learning.
-- [utils/](utils/) — Shared helper code for robot examples and velocity observation.
+-   [CMakeLists.txt](CMakeLists.txt) --- CMake build definition for the
+    C++ components.
+-   [leader.cpp](leader.cpp) --- Leader-side teleoperation node.
+-   [follower.cpp](follower.cpp) --- Follower-side teleoperation node.
+-   [teleop_config.yml](teleop_config.yml) --- Runtime configuration for
+    networking and controller parameters.
+-   [messages/robot-state.capnp](messages/robot-state.capnp) --- Cap'n
+    Proto schema for robot-state messages.
+-   [ProMP/](ProMP/) --- Python scripts related to ProMP-based motion
+    learning.
+-   [utils/](utils/) --- Shared helper code for robot examples and
+    velocity observation.
 
 ## Requirements
 
 Before building, make sure the following are installed:
 
-- CMake
-- C++20-compatible compiler
-- Cap'n Proto
-- Eigen3
-- yaml-cpp
-- libfranka
+-   CMake
+-   C++20-compatible compiler
+-   Cap'n Proto
+-   Eigen3
+-   yaml-cpp
+-   libfranka
 
-The current build file expects libfranka to be available in a custom location. If your installation differs, update the path in [CMakeLists.txt](CMakeLists.txt) accordingly.
+The current build file expects libfranka to be available in a custom
+location. If your installation differs, update the path in
+[CMakeLists.txt](CMakeLists.txt) accordingly.
 
-## Build
+## Normal installation
 
-From the repository root:
+Install all required system dependencies, including CMake, a
+C++20-compatible compiler, Cap'n Proto, Eigen3, yaml-cpp, and libfranka.
 
-```bash
+Then configure and build the project from the repository root:
+
+``` bash
 cmake -S . -B build
 cmake --build build -j
 ```
 
-This will build the executables for the leader and follower nodes.
+The generated executables will be placed in the `build` directory.
+
+If libfranka is installed in a location different from the one expected
+by this repository, update [CMakeLists.txt](CMakeLists.txt) before
+configuring the project.
+
+## Docker installation
+
+A Docker-based setup can be used to keep the build and runtime
+dependencies isolated from the host system.
+
+Specify the required version on libfranka in the Dockerfile ARG aprameter.
+
+Build the Docker image from the repository root using the project's
+Dockerfile:
+
+``` bash
+# Build and start
+docker compose up -d --build
+
+# Open a terminal inside the service
+docker compose exec franka-dev bash
+```
+### Dev tools installation
+
+The dev tools configuration is also provided. 
+Install the VS code dev containers extension and then:
+
+```text
+Ctrl + Shift + P
+
+Dev Containers: Rebuild and Reopen in Container
+```
+
+> **Note:** The exact Docker runtime options may need to be adjusted for
+> your Franka setup, real-time configuration, devices, permissions, and
+> the Dockerfile used by this repository.
 
 ## Configuration
 
 Edit [teleop_config.yml](teleop_config.yml) to set:
 
-- the robot IP addresses
-- UDP ports
-- control gains
-- gripper settings
-- sampling frequency and safety thresholds
+-   the robot IP addresses
+-   UDP ports
+-   control gains
+-   gripper settings
+-   sampling frequency and safety thresholds
 
-## Run
+Make sure the configured robot IP addresses are reachable from the
+machine, or from the Docker container when using Docker.
 
-After building, run the executables from the build directory:
+## Execution
 
-```bash
-./build/leader
-./build/follower
+The teleoperation programs should be started in separate terminals.
+Configure [teleop_config.yml](teleop_config.yml) before starting the
+controllers.
+
+### Bilateral teleoperation
+
+Start the leader first:
+
+``` bash
+./build/leader_bilateral
 ```
 
-Press `q` in the terminal to stop the running process.
+Then, in a second terminal, start the follower:
+
+``` bash
+./build/follower_bilateral
+```
+
+### Unilateral teleoperation
+
+``` bash
+./build/leader_unilateral
+```
+
+``` bash
+./build/follower_unilateral
+```
+
 
 ## ProMP scripts
 
-The Python code in [ProMP/Full_ProMP.py](ProMP/Full_ProMP.py) provides a starting point for ProMP-based trajectory modeling and learning. It can be used alongside the C++ teleop stack for demonstration and motion generation experiments.
+The Python code in [ProMP/Full_ProMP.py](ProMP/Full_ProMP.py) provides a
+starting point for ProMP-based trajectory modeling and learning. It can
+be used alongside the C++ teleop stack for demonstration and motion
+generation experiments.
 
 ## Notes
 
-- This project is intended for research and robotics experimentation.
-- Ensure your robot network configuration is correct before running the controllers.
-- The code assumes a working Franka robot setup and proper permissions for robot access.
+-   This project is intended for research and robotics experimentation.
+-   Ensure your robot network configuration is correct before running
+    the controllers.
+-   The code assumes a working Franka robot setup and proper permissions
+    for robot access.
+-   Verify the exact executable targets generated by
+    [CMakeLists.txt](CMakeLists.txt) if your local build uses different
+    binary names.

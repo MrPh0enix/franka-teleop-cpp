@@ -5,8 +5,8 @@ services:
       dockerfile: Dockerfile
       args:
         USERNAME: dev
-        USER_UID: ${USER_UID:-1000}
-        USER_GID: ${USER_GID:-1000}
+        USER_UID: ${USER_UID:-1005}
+        USER_GID: ${USER_GID:-1005}
 
     image: franka-teleop-cpp-image
     container_name: franka-teleop-cpp-container

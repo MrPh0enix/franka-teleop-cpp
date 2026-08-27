@@ -645,9 +645,7 @@ int main()
 #endif
       }
 
-      const std::array<double, kJointCount> rate_limited_torques =
-          franka::limitRate(franka::kMaxTorqueRate, command_torques,
-                            robot_state.tau_J_d);
+      const std::array<double, kJointCount> rate_limited_torques = franka::limitRate(franka::kMaxTorqueRate, command_torques, robot_state.tau_J_d);
       return rate_limited_torques;
     };
 

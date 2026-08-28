@@ -55,7 +55,7 @@ namespace
     std::array<double, kJointCount> trq{};
     std::array<double, kJointCount> trq_der{};
     double time = 0.0;
-    double gripper_width = 0.0;
+    double gripper_width = 0.1;
   };
 
   struct PublishedRobotData
@@ -65,7 +65,7 @@ namespace
     std::array<double, kJointCount> ext_trq{};
     std::array<double, kJointCount> trq{};
     std::array<double, kJointCount> trq_der{};
-    double gripper_width = 0.08;
+    double gripper_width = 0.1;
   };
 
 struct RecordSample {

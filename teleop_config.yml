@@ -25,13 +25,13 @@ disturbance_observer:
 
 leader:
   ip: "127.0.0.1"
-  robot: "172.22.2.29" #vincent
+  robot: "172.22.2.29"
   port: 49185
 
 
 follower:
   ip: "127.0.0.1"
-  robot: "172.22.2.30" #bob
+  robot: "172.22.2.30"
   port: 49186
 
 
@@ -39,5 +39,5 @@ gripper:
   object_width: 0.055
   gripping_force: 90
   speed: 0.1
-  close_threshold: 0.08
-  open_threshold: 0.06
+  close_threshold: 0.06
+  open_threshold: 0.08

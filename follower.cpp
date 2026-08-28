@@ -484,8 +484,7 @@ int main()
     franka::Robot robot(config["follower"]["robot"].as<std::string>());
     const franka::Model model = robot.loadModel();
 
-    const std::array<double, kJointCount> home_position = {
-        0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
+    const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
     MotionGenerator motion_generator(0.5, home_position);
     robot.control(motion_generator);
 

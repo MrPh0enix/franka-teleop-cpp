@@ -1,0 +1,29 @@
+services:
+  franka-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        USERNAME: dev
+        USER_UID: ${USER_UID:-1005}
+        USER_GID: ${USER_GID:-1005}
+
+    image: franka-teleop-cpp-image
+    container_name: franka-teleop-cpp-container
+
+    network_mode: host
+
+    volumes:
+      # Source/workspace
+      - .:/workspace:cached
+
+
+    # for conn to robot hardware
+    privileged: true
+
+    stdin_open: true
+    tty: true
+
+    working_dir: /workspace
+
+    command: /bin/bash

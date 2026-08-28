@@ -1,0 +1,45 @@
+{
+    "name": "franka-teleop-cpp-container",
+
+    "dockerComposeFile": "../docker-compose.yml",
+
+    "service": "franka-dev",
+
+    "workspaceFolder": "/workspace",
+
+    "shutdownAction": "stopCompose",
+
+    "remoteUser": "dev",
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-vscode.cpptools",
+                "ms-vscode.cmake-tools",
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "eamodio.gitlens",
+                "redhat.vscode-xml",
+                "yzhang.markdown-all-in-one"
+            ],
+
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash",
+
+                "C_Cpp.default.includePath": [
+                    "/workspace/**",
+                    "/usr/local/include/**",
+                    "/usr/include/**"
+                ],
+
+                "C_Cpp.default.compilerPath": "/usr/bin/g++",
+
+                "cmake.configureOnOpen": false,
+
+                "python.defaultInterpreterPath": "/usr/bin/python3",
+
+            
+            }
+        }
+    }
+}

@@ -47,26 +47,26 @@ namespace
     constexpr std::size_t kRecordQueueCapacity = 65536;
     using Clock = std::chrono::steady_clock;
 
-    struct RemoteRobotData
-    {
-        std::array<double, kJointCount> pos{};
-        std::array<double, kJointCount> vel{};
-        std::array<double, kJointCount> ext_trq{};
-        std::array<double, kJointCount> trq{};
-        std::array<double, kJointCount> trq_der{};
-        double time = 0.0;
-        double gripper_width = 0.0;
-    };
+  struct RemoteRobotData
+  {
+    std::array<double, kJointCount> pos{};
+    std::array<double, kJointCount> vel{};
+    std::array<double, kJointCount> ext_trq{};
+    std::array<double, kJointCount> trq{};
+    std::array<double, kJointCount> trq_der{};
+    double time = 0.0;
+    double gripper_width = 0.1;
+  };
 
-    struct PublishedRobotData
-    {
-        std::array<double, kJointCount> pos{};
-        std::array<double, kJointCount> vel{};
-        std::array<double, kJointCount> ext_trq{};
-        std::array<double, kJointCount> trq{};
-        std::array<double, kJointCount> trq_der{};
-        double gripper_width = 0.08;
-    };
+  struct PublishedRobotData
+  {
+    std::array<double, kJointCount> pos{};
+    std::array<double, kJointCount> vel{};
+    std::array<double, kJointCount> ext_trq{};
+    std::array<double, kJointCount> trq{};
+    std::array<double, kJointCount> trq_der{};
+    double gripper_width = 0.1;
+  };
 
     struct RecordSample
     {
@@ -675,7 +675,7 @@ int main()
         franka::Robot robot(config["leader"]["robot"].as<std::string>());
         const franka::Model model = robot.loadModel();
 
-        const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 1.57, 1.57079633, 0.78539816};
+        const std::array<double, kJointCount> home_position = {0.0, -0.78539816, 0.0, -2.35619449, 0.0, 1.57079633, 0.78539816};
         MotionGenerator motion_generator(0.5, home_position);
         robot.control(motion_generator);
 

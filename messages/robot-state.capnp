@@ -1,7 +1,7 @@
 @0xb688f6e9883fe200;
 const version :UInt32 = 2;
 struct RobotState {
-  const messageSize :UInt32 = 248;
+  const messageSize :UInt32 = 312;
   time @0 :UInt64 = 0;
   joint1Pos @1 :Float64 = 0;
   joint2Pos @2 :Float64 = 0;
